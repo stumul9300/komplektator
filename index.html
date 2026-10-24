@@ -44,6 +44,12 @@ header{background:var(--surface);border-bottom:1px solid var(--line)}
 .brand h1{font-family:var(--f-display);font-weight:400;font-size:24px;margin:0;line-height:1.2;text-wrap:balance}
 .roles{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .tourbtn{white-space:nowrap}
+.savest{font-size:13px;color:var(--muted);min-width:0}.savest[data-st=error]{color:var(--s-bad);font-weight:600}.savest[data-st=saved]{color:var(--s-ok)}
+.hist{list-style:none;margin:0;padding:0}.hist li{padding:7px 0;border-bottom:1px solid var(--line);font-size:14px}.hist li:last-child{border-bottom:0}
+.hist time{color:var(--muted);font-size:12px;margin-right:6px;font-family:var(--f-mono)}.hist .who{font-weight:600}
+.hist .ch{color:var(--muted)}.hist .ch b{color:var(--fg);font-weight:500}
+.filters{display:flex;flex-wrap:wrap;gap:10px 12px}.filters .field{flex:1 1 150px;min-width:0}
+.histday{margin:18px 0 6px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
 .tour-spot{position:fixed;z-index:90;border-radius:10px;box-shadow:0 0 0 3px var(--brass),0 0 0 9999px rgba(10,16,13,.55);pointer-events:none;transition:all .2s}
 .tour-card{position:fixed;z-index:91;width:min(340px,calc(100vw - 32px));background:var(--surface);color:var(--fg);border-radius:12px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.3)}
 .tour-card p{margin:0 0 12px;line-height:1.45}
@@ -238,6 +244,7 @@ table.spec td.num,table.spec th.num{overflow-wrap:normal;white-space:nowrap}
       <select id="projSel" class="projsel" aria-label="Объект" hidden></select>
     </div>
     <div class="roles">
+      <span id="saveState" class="savest" role="status" aria-live="polite"></span>
       <span>Смотреть как:</span>
       <div class="seg" id="roleSeg" role="group" aria-label="Роль"></div>
       <button class="btn tourbtn" id="tourBtn" type="button" title="Как пользоваться">? Как пользоваться</button>
@@ -377,7 +384,9 @@ async function fetchPreview(url){
 }
 function fileToDataUrl(file,max=480){return new Promise((res,rej)=>{const img=new Image();img.onload=()=>{const k=Math.min(1,max/Math.max(img.width,img.height));const c=document.createElement("canvas");c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);c.getContext("2d").drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(img.src);res(c.toDataURL("image/jpeg",.8))};img.onerror=rej;img.src=URL.createObjectURL(file)})}
 
-function toast(t){const el=$("#toast");el.textContent=t;el.hidden=false;clearTimeout(toast.h);toast.h=setTimeout(()=>el.hidden=true,2600)}
+function toast(t,ms=2600){const el=$("#toast");el.textContent=t;el.hidden=false;clearTimeout(toast.h);toast.h=setTimeout(()=>el.hidden=true,ms)}
+// Индикатор «Сохраняется / Сохранено / Ошибка» в шапке
+function setSaveState(st){const el=$("#saveState");if(!el)return;clearTimeout(setSaveState.h);el.dataset.st=st;el.textContent={saving:"Сохраняется…",saved:"✓ Сохранено",error:"⚠ Ошибка сохранения"}[st]||"";if(st==="saved")setSaveState.h=setTimeout(()=>{el.textContent=""},3000)}
 
 // ---------- хранение ----------
 // ===== НАСТРОЙКА: вставьте сюда данные своего проекта Supabase (Project Settings → API) =====
@@ -394,17 +403,22 @@ function backupLocal(){try{localStorage.setItem("k-backup",JSON.stringify([...al
 // Версия каждой позиции, какой её последний раз видели в базе. При сохранении
 // отправляем только поля, изменённые здесь, поверх свежей версии из базы, чтобы
 // не затереть то, что в это время поменял другой участник (например, помещение).
-const base=new Map();
+const base=new Map(),ver=new Map();
+let hasVer=false,hasAudit=false;
 async function mergeWithServer(id,mine){
   const prevS=base.get(id);if(!prevS)return mine;
-  const r=await sb.from("items").select("data").eq("id",id).maybeSingle();
+  const r=await sb.from("items").select("*").eq("id",id).maybeSingle();
   if(r.error||!r.data)return mine;
+  if(r.data.version!=null)ver.set(id,r.data.version);
   const prev=JSON.parse(prevS),cur=r.data.data||{},out={...cur};
+  const clash=[];
   for(const k of new Set([...Object.keys(prev),...Object.keys(mine)])){
     if(JSON.stringify(prev[k])===JSON.stringify(mine[k]))continue;
+    if(k!=="comments"&&k!=="_actor"&&JSON.stringify(cur[k])!==JSON.stringify(prev[k])&&JSON.stringify(cur[k])!==JSON.stringify(mine[k]))clash.push(FIELD[k]||k);
     if(k==="comments"){const seen=new Set((cur.comments||[]).map(c=>c.r+c.d+c.t));out.comments=[...(cur.comments||[]),...(mine.comments||[]).filter(c=>!seen.has(c.r+c.d+c.t))];continue}
     if(k in mine)out[k]=mine[k];else delete out[k];
   }
+  if(clash.length)toast(`«${mine.name}»: ${clash.join(", ")} одновременно изменил другой участник. Сохранено ваше значение, прежнее видно в истории позиции.`,7000);
   return out;
 }
 async function save(it){
@@ -412,13 +426,19 @@ async function save(it){
   const {id,_no,...body}=it;
   unsaved.set(id,it);
   for(let attempt=0;attempt<3;attempt++){
-    const data=await mergeWithServer(id,JSON.parse(JSON.stringify(body)));
-    const {error}=await sb.from("items").upsert({id,data,created:data.created||Date.now()});
+    setSaveState("saving");
+    const data=await mergeWithServer(id,{...JSON.parse(JSON.stringify(body)),_actor:role});
+    let q=sb.from("items").upsert({id,data,created:data.created||Date.now(),...(hasVer?{version:ver.get(id)||0}:{})});
+    if(hasVer)q=q.select("version");
+    const {data:back,error}=await q;
+    if(error&&/version_conflict/.test(error.message||"")){ // кто-то сохранил раньше — берём свежую версию и повторяем
+      const r=await sb.from("items").select("*").eq("id",id).maybeSingle();if(r.data)ver.set(id,r.data.version);continue}
     if(!error){
-      base.set(id,JSON.stringify(data));
+      if(hasVer&&back?.[0]?.version!=null)ver.set(id,back[0].version);
+      base.set(id,JSON.stringify(data));auditCache.delete(id);feed=null;if(openId===id&&histOpen)loadItemAudit(id);setSaveState(unsaved.size>1?"saving":"saved");
       if(unsaved.get(id)===it){unsaved.delete(id);if(JSON.stringify(data)!==JSON.stringify(body)){Object.assign(it,data);render()}}
       if(!unsaved.size&&saveErr){saveErr="";render()}backupLocal();return}
-    console.error("save",id,error);saveErr=`«${it.name}» не сохранилась: ${error.message||error.code||"ошибка сети"}`;
+    console.error("save",id,error);setSaveState("error");saveErr=`«${it.name}» не сохранилась: ${error.message||error.code||"ошибка сети"}`;
     await new Promise(r=>setTimeout(r,800*(attempt+1)));
   }
   render();
@@ -437,7 +457,8 @@ async function loadAll(){
   const [a,b]=await Promise.all([sb.from("items").select("*").order("created"),sb.from("project").select("*")]);
   if(a.error){offline=true;loaded=true;toast("Нет связи с базой данных");render();return}
   const server=a.data.map(r=>({id:r.id,...r.data})).map(i=>ST[i.st]?i:{...i,st:"pick"});
-  a.data.forEach(r=>{if(!unsaved.has(r.id))base.set(r.id,JSON.stringify(r.data))});
+  a.data.forEach(r=>{if(!unsaved.has(r.id)){base.set(r.id,JSON.stringify(r.data));if(r.version!=null)ver.set(r.id,r.version)}});
+  auditCache.clear();feed=null;
   // позиции, которые ещё сохраняются или не сохранились, оставляем в списке
   for(const [id,it] of unsaved){const k=server.findIndex(x=>x.id===id);if(k<0)server.push(it);else server[k]=it}
   allItems=server;
@@ -460,6 +481,8 @@ async function connect(){
   if(!SUPABASE_URL||!SUPABASE_KEY||!window.supabase){offline=true;loaded=true;render();return}
   sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
   if(SUP_TOKEN){await loadSupReq();return}
+  try{const r=await sb.from("items").select("version").limit(1);hasVer=!r.error}catch(e){hasVer=false}
+  try{const r=await sb.from("audit_events").select("id").limit(1);hasAudit=!r.error}catch(e){hasAudit=false}
   await loadAll();
   sb.channel("komplektator").on("postgres_changes",{event:"*",schema:"public"},()=>{clearTimeout(reloadT);reloadT=setTimeout(loadAll,300)}).subscribe();
 }
@@ -525,6 +548,7 @@ function renderHeader(){
   const T=[["overview","Обзор"],["spec","Спецификация"],["viz","Визуализации"],["inbox","Мои задачи",n]];
   if(can("payments"))T.push(["payments","Счета и оплаты"]);
   if(can("delivery"))T.push(["delivery","Поставки"]);
+  T.push(["history","История"]);
   if(!T.some(t=>t[0]===tab))tab="overview";
   $("#tabs").innerHTML=T.map(([k,t,c])=>`<button role="tab" data-tab="${k}" aria-selected="${k===tab}">${t}${c?`<span class="count">${c}</span>`:""}</button>`).join("");
 }
@@ -674,6 +698,73 @@ function projectPanel(){
   </form></details>`;
 }
 let secPick="";
+// ---------- Журнал изменений ----------
+// Записи создаёт база (триггер из supabase-update-2.sql), сайт только читает их.
+const FIELD={name:"Наименование",brand:"Бренд",sku:"Артикул",sup:"Поставщик",url:"Ссылка",room:"Помещение",section:"Раздел",qty:"Количество",unit:"Единица",area:"Нужно м²",perPack:"В коробке",price:"Цена",clientPrice:"Цена для клиента",bureauPrice:"Цена для бюро",delivery:"Доставка",st:"Статус",eta:"Плановая дата поставки",etaFact:"Фактическая дата",ship:"Доставка (статус)",pay:"Оплата",variants:"Варианты",chosen:"Выбранный вариант",checklist:"Чек-лист",needClient:"Согласовать с заказчиком",hideClient:"Скрыто от заказчика",img:"Фото",dims:"Габариты",color:"Цвет",ident:"Идентификатор",note:"Дополнение",deleted:"Корзина",reapprove:"Повторное согласование",priceCheckedAt:"Цена проверена"};
+const ACT={create:"Создание",update:"Изменение",price:"Цены",status:"Статус",comment:"Комментарий",payment:"Оплата",variant:"Выбор варианта",delete:"Удаление",restore:"Восстановление",purge:"Удаление навсегда"};
+const auditCache=new Map();let feed=null,feedErr="",feedF={from:"",to:"",who:"",act:"",q:""};
+const PRICE_F=new Set(["price","clientPrice","bureauPrice","delivery","pay"]);
+function fmtVal(k,v){
+  if(v==null||v==="")return "—";
+  if(k==="st")return ST[v]?.t||v;
+  if(PRICE_F.has(k)&&typeof v==="number")return can("prices")?fmtRub(v):"—";
+  if(k==="pay"&&typeof v==="object")return can("prices")?`${PAY[v.status]||""}${(v.list||[]).length?`, платежей ${(v.list||[]).length}`:""}${v.paid?`, оплачено ${fmtRub(v.paid)}`:""}`:"изменена";
+  if(typeof v==="boolean")return v?"да":"нет";
+  if(Array.isArray(v))return k==="checklist"?`${v.filter(c=>c.done).length} из ${v.length}`:k==="variants"?`${v.length} шт.: ${v.map(x=>x.name).join(", ").slice(0,80)}`:`${v.length}`;
+  if(typeof v==="object")return "изменено";
+  const t=String(v);return t.length>70?t.slice(0,70)+"…":t;
+}
+const blank=v=>v==null||v===""||v===0||v===false||(Array.isArray(v)&&!v.length);
+function evVisible(e){
+  if(e.action!=="create"&&e.action!=="comment"&&e.field&&blank(e.old_json)&&blank(e.new_json))return false;
+  if(role==="client"){if(e.field==="bureauPrice")return false;const it=byId(e.item_id);if(it?.hideClient)return false}
+  if(!can("prices")&&PRICE_F.has(e.field))return false;
+  return true;
+}
+function evText(e){
+  const f=FIELD[e.field]||e.field;
+  switch(e.action){
+    case "create":return "создал(а) позицию";
+    case "comment":return `написал(а): «${esc(String(e.new_json?.t||"").slice(0,160))}»`;
+    case "delete":return "переместил(а) в корзину";
+    case "restore":return "вернул(а) из корзины";
+    case "purge":return "удалил(а) навсегда";
+    case "variant":return `выбрал(а) вариант №${(+e.new_json||0)+1}`;
+    default:return `${esc(f)}: <span class="ch"><b>${esc(fmtVal(e.field,e.old_json))}</b> → <b>${esc(fmtVal(e.field,e.new_json))}</b></span>`;
+  }
+}
+const evWho=e=>ROLES[e.actor]?.name||(e.actor?esc(e.actor):"Участник");
+const evTime=e=>new Date(e.created_at).toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"});
+const evDay=e=>new Date(e.created_at).toLocaleDateString("ru-RU",{day:"numeric",month:"long",year:"numeric"});
+async function loadItemAudit(id){
+  if(!hasAudit||auditCache.has(id))return;auditCache.set(id,null);
+  const {data,error}=await sb.from("audit_events").select("*").eq("item_id",id).order("created_at",{ascending:false}).limit(200);
+  auditCache.set(id,error?[]:data||[]);if(openId===id)renderDrawer();
+}
+function itemHistory(i){
+  if(!hasAudit)return `<details><summary style="cursor:pointer;font-weight:600">История изменений</summary><p class="m">Журнал включится после обновления базы — файл supabase-update-2.sql.</p></details>`;
+  const ev=auditCache.get(i.id);if(ev===undefined)loadItemAudit(i.id);
+  const list=(ev||[]).filter(evVisible);
+  return `<details id="histBox"${histOpen?" open":""}><summary style="cursor:pointer;font-weight:600">История изменений${ev?` · ${list.length}`:""}</summary>${ev==null?`<p class="m">Загружаю…</p>`:list.length?`<ul class="hist">${list.map(e=>`<li><time>${evDay(e).replace(/ \d{4}.*$/,"")} ${evTime(e)}</time><span class="who">${evWho(e)}</span> ${evText(e)}</li>`).join("")}</ul>`:`<p class="m">Пока изменений нет.</p>`}</details>`;
+}
+let histOpen=false;
+async function loadFeed(){
+  if(!hasAudit)return;feed=feed||[];
+  let q=sb.from("audit_events").select("*").eq("project_id",pid).order("created_at",{ascending:false}).limit(1000);
+  const {data,error}=await q;feedErr=error?error.message:"";feed=data||[];if(tab==="history")render();
+}
+function history(){
+  if(!hasAudit)return `<div class="vizhead"><h2>История</h2></div><div class="panel"><p>Чтобы заработал журнал изменений, обновите базу один раз: Supabase → SQL Editor → New query → вставьте текст файла <b>supabase-update-2.sql</b> из архива сайта → Run. После этого обновите страницу.</p><p class="m">Журнал ведёт сама база: записи нельзя изменить или удалить с сайта, время — серверное.</p></div>`;
+  if(feed==null){loadFeed();return `<div class="empty">Загружаю историю…</div>`}
+  const F=feedF,qq=F.q.trim().toLowerCase();
+  const nm=e=>(byId(e.item_id)?.name||e.old_json?.name||e.new_json?.name||"Позиция");
+  const list=feed.filter(evVisible).filter(e=>(!F.who||e.actor===F.who)&&(!F.act||e.action===F.act)&&(!F.from||e.created_at.slice(0,10)>=F.from)&&(!F.to||e.created_at.slice(0,10)<=F.to)&&(!qq||nm(e).toLowerCase().includes(qq)));
+  let day="";
+  return `<div class="vizhead"><h2>История проекта</h2></div>
+  <div class="filters panel" style="margin-bottom:12px"><label class="field">С даты<input type="date" id="hfFrom" value="${esc(F.from)}"></label><label class="field">По дату<input type="date" id="hfTo" value="${esc(F.to)}"></label><label class="field">Участник<select id="hfWho"><option value="">Все</option>${Object.entries(ROLES).map(([k,v])=>`<option value="${k}"${F.who===k?" selected":""}>${v.name}</option>`).join("")}</select></label><label class="field">Действие<select id="hfAct"><option value="">Все</option>${Object.entries(ACT).map(([k,v])=>`<option value="${k}"${F.act===k?" selected":""}>${v}</option>`).join("")}</select></label><label class="field">Позиция<input id="hfQ" value="${esc(F.q)}" placeholder="название"></label></div>
+  ${feedErr?`<p class="note warn">${esc(feedErr)}</p>`:""}
+  <div class="panel">${list.length?list.map(e=>{const d=evDay(e);const h=d!==day?`<div class="histday">${d}</div>`:"";day=d;return h+`<div class="row" ${byId(e.item_id)?`data-open="${esc(e.item_id)}" style="cursor:pointer"`:""}><time class="m" style="font-family:var(--f-mono);min-width:44px">${evTime(e)}</time><div class="grow"><div class="t">${esc(nm(e))}</div><div class="m"><span class="who" style="color:var(--fg)">${evWho(e)}</span> ${evText(e)}</div></div></div>`}).join(""):`<div class="empty">Нет событий${feed.length?" по этим фильтрам":""}</div>`}</div>`;
+}
 // ---------- Обучалка: короткий тур по шагам для каждой роли ----------
 const TOUR={
   kompl:[
@@ -1154,6 +1245,7 @@ function renderDrawer(){
     ${checklist}
     ${pay}
     <div><h3>Обсуждение</h3><div class="msgs">${(i.comments||[]).map(c=>`<div class="msg"><div class="who">${ROLES[c.r]?.name||"Участник"}<time>${esc(c.d)}</time></div>${esc(c.t)}</div>`).join("")||`<div class="m" style="color:var(--muted);font-size:14px">Комментариев пока нет.</div>`}</div></div>
+    ${itemHistory(i)}
     ${readOnly?"":`<form class="compose" id="compose"><input id="cText" placeholder="Комментарий от имени: ${ROLES[role].name.toLowerCase()}" autocomplete="off"><button class="btn pri" type="submit">Отправить</button></form>`}
     ${del}
   </div>`;
@@ -1167,7 +1259,7 @@ function render(){
   const addOpen=$("#addForm")&&!$("#addForm").hidden;
   const formVals={};document.querySelectorAll("#main input,#main select").forEach(el=>{if(el.id&&el.type!=="file")formVals[el.id]=el.type==="checkbox"?el.checked:el.value});
   const banner=(saveErr&&unsaved.size?`<div class="alert">${esc(saveErr)}. <button class="btn" id="retrySave">Сохранить ещё раз</button></div>`:"")+(role==="kompl"&&lostItems.length?`<div class="alert">В базе нет ${lostItems.length} поз., которые были в этом браузере: ${lostItems.map(i=>esc(i.name)).join(", ")}. <button class="btn" id="restoreLost">Вернуть</button> <button class="btn" id="dismissLost">Не нужно</button></div>`:"");
-  $("#main").innerHTML=banner+(!loaded?`<div class="empty">Загружаю данные проекта…</div>`:(offline?`<p class="note warn">База данных не подключена: изменения пропадут после перезагрузки страницы.</p>`:"")+({overview,spec,inbox,delivery,payments,viz}[tab])());
+  $("#main").innerHTML=banner+(!loaded?`<div class="empty">Загружаю данные проекта…</div>`:(offline?`<p class="note warn">База данных не подключена: изменения пропадут после перезагрузки страницы.</p>`:"")+({overview,spec,inbox,delivery,payments,viz,history}[tab])());
   if(addOpen&&$("#addForm"))$("#addForm").hidden=false;
   for(const[k,v]of Object.entries(formVals)){const el=document.getElementById(k);if(el&&$("#main").contains(el)){if(el.type==="checkbox")el.checked=v;else el.value=v}}
   renderDrawer();
@@ -1279,7 +1371,9 @@ document.addEventListener("paste",e=>{
   const tag=e.target.tagName;
   if(/^https?:\/\/\S+\.(jpe?g|png|webp|gif|avif)(\?\S*)?$/i.test(text)&&!(tag==="INPUT"&&e.target.id!=="itemImgUrl")){e.preventDefault();apply(text)}
 });
+document.addEventListener("toggle",e=>{if(e.target.id==="histBox"){histOpen=e.target.open;if(histOpen&&openId)loadItemAudit(openId)}},true);
 document.addEventListener("input",e=>{
+  if(e.target.id==="hfQ"){feedF.q=e.target.value;render();return}
   if(e.target.id==="fName"&&AREA_RE.test(e.target.value)&&$("#fUnit")?.value==="шт"&&!$("#fUnit").dataset.touched){$("#fUnit").value="м²";updatePackCalc()}
   if(e.target.id==="colTile"&&colEdit){colEdit.tile=+e.target.value;const st=document.querySelector('.stage.editable');if(st)st.style.backgroundSize=colEdit.tile+"% auto"}if(["fQty","fPack","fPrice"].includes(e.target.id))updatePackCalc()});
 let vizPending="";
@@ -1304,6 +1398,7 @@ document.addEventListener("change",e=>{
   if(e.target.id==="itemSectionNew"){const nm=addSection(e.target.value);if(nm){const it=byId(openId);it.section=nm;save(it);toast("Раздел: "+nm);render()}}
   if(e.target.id==="fSection"){const n=$("#fSectionNew");n.hidden=e.target.value!=="__new";if(!n.hidden)n.focus()}
   if(e.target.id==="xlsFile"&&e.target.files[0]){importXls(e.target.files[0]);e.target.value=""}
+  if(/^hf(From|To|Who|Act)$/.test(e.target.id)){feedF={...feedF,[{hfFrom:"from",hfTo:"to",hfWho:"who",hfAct:"act"}[e.target.id]]:e.target.value};render();return}
   if(e.target.id==="projSel"){const v=e.target.value;if(v==="__new"){e.target.value=pid;newProject();}else switchProject(v);return}
   if(e.target.id==="itemSup"){const it=byId(openId);it.sup=e.target.value.trim();save(it);toast("Поставщик сохранён");render()}
   if(e.target.id==="itemUrl"){const it=byId(openId);it.url=e.target.value.trim();if(it.url&&!it.sup)it.sup=shopName(it.url);save(it);if(it.url){toast("Ищу фото и цену на странице товара…");fetchPreview(it.url).then(r=>{const got=[];if(r.img&&!it.img){it.img=r.img;got.push("фото")}if(r.price&&!it.price){it.price=r.price;got.push("цена")}if(got.length){save(it);toast("Добавлено: "+got.join(" и "));render()}else if(!it.img||!it.price)toast("Не всё нашлось на странице. Укажите вручную.")})}render()}
