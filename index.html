@@ -99,6 +99,7 @@ tfoot td{font-weight:600;border-bottom:0}
 .ansbox .who{font-weight:600}
 .reqlink{display:flex;gap:6px;align-items:center;margin-top:6px}.reqlink input{flex:1;min-width:0;font-family:var(--f-mono);font-size:12px}
 @media (max-width:640px){.supitem{grid-template-columns:1fr}.supitem .ph{width:100%;height:200px}}
+.projsel{margin-top:6px;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:5px 8px;font-size:14px;max-width:100%}
 tr.sechead td{background:var(--sunk);font-weight:700;text-transform:uppercase;letter-spacing:.04em;font-size:13px;cursor:default}
 tr.roomhead td{font-size:13px;color:var(--muted);font-weight:600;padding-top:8px;padding-bottom:6px;cursor:default}
 tr.sectot td{font-weight:600;cursor:default}
@@ -208,6 +209,7 @@ td .roomsel{background:transparent}
     <div class="brand">
       <small id="pSub">Тестовая версия</small>
       <h1 id="pName">Комплектатор</h1>
+      <select id="projSel" class="projsel" aria-label="Объект" hidden></select>
     </div>
     <div class="roles">
       <span>Смотреть как:</span>
@@ -234,18 +236,18 @@ const ST={
 };
 const FLOW=["pick","des","cli","ok","ord","del"];
 const ROOMS=["Гостиная","Кухня","Спальня","Ванная","Санузел","Прихожая","Детская","Кабинет","Гардеробная","Балкон"];
-const allRooms=()=>[...new Set([...ROOMS,...(project.rooms||[]),...allItems.map(i=>i.room).filter(Boolean)])];
+const allRooms=()=>[...new Set([...ROOMS,...(project.rooms||[]),...projItems().map(i=>i.room).filter(Boolean)])];
 // Выпадающий список помещений с пунктом «Другое…» для нового помещения
 const roomSelect=(id,cur,extra="")=>`<select id="${id}" class="roomsel"${extra}>${cur?"":`<option value="" selected disabled>— выберите —</option>`}${allRooms().map(r=>`<option${r===cur?" selected":""}>${esc(r)}</option>`).join("")}<option value="__new">＋ Другое помещение…</option></select>`;
 // Разделы сметы, как в Excel: Отопление, Двери, Сантехника… Внутри раздела позиции идут по помещениям
 const SECTIONS=["Отопление","Двери","Сантехника","Освещение","Электрика","Отделочные материалы","Мебель","Кухня и техника","Текстиль и декор","Прочее"];
-const allSections=()=>[...new Set([...SECTIONS,...(project.sections||[]),...allItems.map(i=>i.section).filter(Boolean)])];
+const allSections=()=>[...new Set([...SECTIONS,...(project.sections||[]),...projItems().map(i=>i.section).filter(Boolean)])];
 const sectionSelect=(id,cur,extra="")=>`<select id="${id}" class="roomsel"${extra}><option value=""${cur?"":" selected"}>— без раздела —</option>${allSections().map(r=>`<option${r===cur?" selected":""}>${esc(r)}</option>`).join("")}<option value="__new">＋ Другой раздел…</option></select>`;
 function addSection(name){name=(name||"").trim();if(!name)return "";if(!allSections().includes(name)){project.sections=[...(project.sections||[]),name];saveProject()}return name}
 function addRoom(name){name=(name||"").trim();if(!name)return "";if(!allRooms().includes(name)){project.rooms=[...(project.rooms||[]),name];saveProject()}return name}
 const SWATCH=["#A8B5A2","#C4B49A","#8E9AA6","#B79C86","#D9D4CA","#7C6A58","#C8D0D2"];
 
-let role=(()=>{const h=location.hash.slice(1);if(ROLES[h])return h;try{const r=localStorage.getItem("k-role");if(ROLES[r])return r}catch(e){}return"kompl"})();
+let role=(()=>{const h=location.hash.slice(1).split("/")[0];if(ROLES[h])return h;try{const r=localStorage.getItem("k-role");if(ROLES[r])return r}catch(e){}return"kompl"})();
 let tab="overview",room="Все",openId=null,confirmDel=false;
 const VIS_FEATURES=[["prices","Цены и бюджет"],["checklist","Чек-листы"],["payments","Счета и оплаты"],["delivery","Поставки"]];
 const VIS_DEFAULT={designer:{prices:true,checklist:true,payments:false,delivery:true},client:{prices:true,checklist:false,payments:true,delivery:true}};
@@ -253,6 +255,12 @@ const PAY={none:"Счёта нет",invoice:"Счёт выставлен",partia
 const CHECK_TEMPLATE=["Запросить КП","Получить счёт","Оплатить","Отгрузить","Принять на объекте"];
 let allItems=[],items=[],project={name:"Новый проект",budget:0,address:"",vis:VIS_DEFAULT};
 let loaded=false,offline=false,readOnly=false;
+// Несколько объектов: «main» — первый проект, остальные — строки proj-… в таблице project.
+// Позиции, визуализации и запросы поставщикам помечены pid; без pid — значит «main».
+let pid=(()=>{const hp=location.hash.slice(1).split("/")[1];if(hp)return hp;try{return localStorage.getItem("k-pid")||"main"}catch(e){return "main"}})();
+let projects=[];
+const pidOf=x=>x.pid||"main";
+const projItems=()=>allItems.filter(i=>pidOf(i)===pid);
 
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -391,8 +399,9 @@ async function save(it){
 function retryUnsaved(){[...unsaved.values()].forEach(save)}
 async function saveProject(){
   if(!sb){render();return}
-  const {error}=await sb.from("project").upsert({id:"main",data:project});
+  const {error}=await sb.from("project").upsert({id:pid,data:project});
   if(error)handleWriteError(error);
+  const k=projects.findIndex(x=>x.id===pid);if(k>=0)projects[k]={id:pid,...project};
 }
 async function removeItem(id){if(!sb)return;const {error}=await sb.from("items").delete().eq("id",id);if(error)handleWriteError(error)}
 function handleWriteError(e){console.error(e);toast("Не удалось сохранить. Проверьте интернет и попробуйте ещё раз.");render()}
@@ -408,11 +417,16 @@ async function loadAll(){
   // сравнение с резервной копией этого браузера
   try{const bk=JSON.parse(localStorage.getItem("k-backup")||"[]");lostItems=bk.filter(b=>!b.deleted&&!allItems.some(x=>x.id===b.id))}catch(e){lostItems=[]}
   backupLocal();
-  const rows=b.data||[];const main=rows.find(r=>r.id==="main");if(main)project={...project,...main.data};
-  vizList=rows.filter(r=>r.id.startsWith("viz-")).map(r=>({id:r.id,...r.data})).sort((x,y)=>(x.created||0)-(y.created||0));
-  reqList=rows.filter(r=>r.id.startsWith("req-")).map(r=>({id:r.id,...r.data})).sort((x,y)=>(y.created||0)-(x.created||0));
-  colList=rows.filter(r=>r.id.startsWith("col-")).map(r=>({id:r.id,...r.data})).sort((x,y)=>(x.created||0)-(y.created||0));
+  const rows=b.data||[];
+  projects=[{id:"main",...(rows.find(r=>r.id==="main")?.data||{name:"Первый проект"})},...rows.filter(r=>r.id.startsWith("proj-")).map(r=>({id:r.id,...r.data})).sort((x,y)=>(x.created||0)-(y.created||0))];
+  if(await ensureStarterProjects(rows))return;
+  if(!projects.some(x=>x.id===pid))pid="main";
+  {const {id:_,...cur}=projects.find(x=>x.id===pid);project={name:"Новый проект",budget:0,address:"",vis:VIS_DEFAULT,...cur}}
+  vizList=rows.filter(r=>r.id.startsWith("viz-")&&pidOf(r.data)===pid).map(r=>({id:r.id,...r.data})).sort((x,y)=>(x.created||0)-(y.created||0));
+  reqList=rows.filter(r=>r.id.startsWith("req-")&&pidOf(r.data)===pid).map(r=>({id:r.id,...r.data})).sort((x,y)=>(y.created||0)-(x.created||0));
+  colList=rows.filter(r=>r.id.startsWith("col-")&&pidOf(r.data)===pid).map(r=>({id:r.id,...r.data})).sort((x,y)=>(x.created||0)-(y.created||0));
   loaded=true;render();
+  autoImport();
 }
 let reloadT,lostItems=[],reqList=[];
 async function connect(){
@@ -423,11 +437,11 @@ async function connect(){
   sb.channel("komplektator").on("postgres_changes",{event:"*",schema:"public"},()=>{clearTimeout(reloadT);reloadT=setTimeout(loadAll,300)}).subscribe();
 }
 async function seedExamples(){
-  const have=new Set(allItems.map(i=>i.id)),add=structuredClone(SEED).filter(i=>!have.has(i.id));
+  const have=new Set(allItems.map(i=>i.id)),add=structuredClone(SEED).filter(i=>!have.has(i.id)).map(i=>({...i,pid}));
   allItems=[...allItems,...add];project={...SEED_PROJECT,...project};render();
   if(!sb)return;
   const r1=add.length?await sb.from("items").upsert(add.map(({id,...d})=>({id,data:d,created:d.created}))):{};
-  const r2=await sb.from("project").upsert({id:"main",data:project});
+  const r2=await sb.from("project").upsert({id:pid,data:project});
   if(r1.error||r2.error)handleWriteError(r1.error||r2.error);else toast("Примеры добавлены");
 }
 
@@ -473,9 +487,10 @@ function choose(it,k){const v=it.variants[k];it.chosen=k;Object.assign(it,{name:
 // ---------- отрисовка ----------
 function renderHeader(){
   $("#pName").textContent=project.name||"Новый проект";
+  const ps=$("#projSel");ps.hidden=!loaded||offline;ps.innerHTML=projects.map(x=>`<option value="${esc(x.id)}"${x.id===pid?" selected":""}>${esc(x.name||"Без названия")}</option>`).join("")+(role==="kompl"&&!readOnly?`<option value="__new">＋ Новый объект…</option>`:"");
   $("#pSub").textContent=offline?"Тестовая версия · данные не сохраняются в этом окне":(project.address||"Тестовая версия");
   $("#roleSeg").innerHTML=Object.entries(ROLES).map(([k,v])=>`<button data-role="${k}" aria-pressed="${k===role}">${v.name}</button>`).join("");
-  items=allItems.filter(i=>!i.deleted&&(role!=="client"||!i.hideClient));
+  items=projItems().filter(i=>!i.deleted&&(role!=="client"||!i.hideClient));
   const n=mine().length;
   const T=[["overview","Обзор"],["spec","Спецификация"],["viz","Визуализации"],["inbox","Мои задачи",n]];
   if(can("payments"))T.push(["payments","Счета и оплаты"]);
@@ -629,6 +644,37 @@ function projectPanel(){
   </form></details>`;
 }
 let secPick="";
+// ---------- Объекты ----------
+const STARTERS=[{id:"proj-souz",name:"Союз",sheet:"https://docs.google.com/spreadsheets/d/1m-GDiWp3xrqhlc_CY3O-f0hZlhulMafC3godvNxGJ-8/edit"},{id:"proj-ostrov",name:"Остров",sheet:"https://docs.google.com/spreadsheets/d/104jxGbnEHn03f1sd2cwTK9lxW5GMxn3PdfT8g7qZnr0/edit#gid=0"}];
+async function ensureStarterProjects(rows){
+  const miss=STARTERS.filter(x=>!rows.some(r=>r.id===x.id));if(!miss.length||!sb||role!=="kompl")return false;
+  const t=Date.now();const {error}=await sb.from("project").upsert(miss.map(({id,...d},k)=>({id,data:{...d,budget:0,address:"",vis:VIS_DEFAULT,created:t+k}})));
+  if(error){handleWriteError(error);return false}
+  await loadAll();return true;
+}
+let importing=false;
+async function autoImport(){
+  if(importing||role!=="kompl"||readOnly||!sb||!project.sheet||project.imported||projItems().length)return;
+  importing=true;const p0=pid;
+  const ok=await importSheet(project.sheet,false);
+  if(ok&&pid===p0){project.imported=true;saveProject()}
+  importing=false;
+}
+function switchProject(id){
+  if(!projects.some(x=>x.id===id))return;
+  pid=id;try{localStorage.setItem("k-pid",id)}catch(e){}
+  room="Все";selIds.clear();openId=null;supFormOpen=false;colEdit=null;
+  if(location.hash.includes("/"))history.replaceState(null,"","#"+role);
+  loaded=false;render();loadAll();
+}
+async function newProject(){
+  const name=(prompt("Название объекта:")||"").trim();if(!name)return;
+  const sheet=(prompt("Ссылка на Google-таблицу со сметой (можно оставить пустым):")||"").trim();
+  const id="proj-"+newId();const data={name,address:"",budget:0,vis:VIS_DEFAULT,created:Date.now(),...(sheet?{sheet}:{})};
+  projects.push({id,...data});
+  if(sb){const {error}=await sb.from("project").upsert({id,data});if(error){handleWriteError(error);return}}
+  switchProject(id);
+}
 // ---------- Запросы поставщику ----------
 // Комплектатор выделяет позиции и создаёт запрос: отдельная строка req-<токен> в таблице project.
 // Поставщик открывает ссылку #sup=<токен> и видит только копию этих позиций, без цен для клиента и бюджета.
@@ -650,7 +696,7 @@ async function createSupReq(){
   const supplier=$("#supName").value.trim();if(!supplier)return;
   const token=Array.from(crypto.getRandomValues(new Uint8Array(12)),b=>"abcdefghijkmnpqrstuvwxyz23456789"[b%32]).join("");
   const its=[...selIds].map(byId).filter(Boolean).map(i=>({id:i.id,name:i.name,brand:i.brand,sku:i.sku,qty:i.qty,unit:i.unit||"шт",dims:i.dims||"",color:i.color||"",ident:i.ident||"",url:i.url||"",img:imgOk(i.img)&&String(i.img).length<300000?i.img:""}));
-  const r={id:"req-"+token,supplier,msg:$("#supMsg").value.trim(),project:project.name||"",created:Date.now(),items:its,answers:{}};
+  const r={id:"req-"+token,pid,supplier,msg:$("#supMsg").value.trim(),project:project.name||"",created:Date.now(),items:its,answers:{}};
   reqList=[r,...reqList];selIds.clear();supFormOpen=false;render();
   if(sb){const {id,...data}=r;const {error}=await sb.from("project").upsert({id,data});if(error){handleWriteError(error);return}}
   const inp=document.getElementById("lnk-"+r.id);
@@ -694,12 +740,14 @@ const normUnit=u=>{u=String(u||"").trim().toLowerCase().replace(/\.$/,"");if(!u)
 function parseSheet(rows){
   const hi=rows.findIndex(r=>r.some(c=>/наимен/i.test(String(c))));if(hi<0)return [];
   const H=rows[hi].map(c=>String(c).toLowerCase());const col=re=>H.findIndex(h=>re.test(h));
-  const C={name:col(/наимен/),dims:col(/габарит/),unit:col(/ед\.?\s*изм|^ед/),price:col(/цена/),qty:col(/кол/),total:col(/итог|стоимост/),color:col(/цвет/),ident:col(/идентиф/),url:col(/ссылк/),st:col(/статус/),note:col(/дополн|примеч|коммент/)};
-  const g=(r,k)=>C[k]<0?"":String(r[C[k]]??"").trim();
+  let C={name:col(/наимен/),dims:col(/габарит/),unit:col(/ед\.?\s*изм|^ед/),price:col(/цена/),qty:col(/кол/),total:col(/итог|стоимост/),color:col(/цвет/),ident:col(/идентиф/),url:col(/ссылк/),st:col(/статус/),note:col(/дополн|примеч|коммент/)};
+  // В выгрузке Google (gviz) заголовки числовых колонок иногда пропадают — тогда берём порядок колонок как в смете
+  if(C.name===1&&[C.price,C.qty,C.unit].some(x=>x<0)){const D={dims:2,unit:3,price:4,qty:5,total:6,color:7,ident:8,url:9,st:10,note:11};for(const k in D)if(C[k]<0)C[k]=D[k]}
+  const g=(r,k)=>C[k]<0?"":String(r[C[k]]??"").trim();let area=0;
   let section="",roomName="",groupIdent="",groupNote="";const out=[];
   for(const r of rows.slice(hi+1)){
     const name=g(r,"name");if(!name)continue;
-    if(/^итого|^всего|стоимость за м/i.test(name))continue;
+    if(/^итого|^всего|стоимость за м/i.test(name)){const a=toNum(g(r,"color"));if(!area&&a>5&&a<5000&&toNum(g(r,"ident")))area=a;continue}
     const price=toNum(g(r,"price")),qty=toNum(g(r,"qty")),total=toNum(g(r,"total"));
     if(!g(r,"unit")&&!price&&!qty&&!total){
       const sw=SEC_WORDS.find(([re])=>re.test(name));
@@ -713,21 +761,41 @@ function parseSheet(rows){
     const st=/достав/i.test(g(r,"st"))?"del":/^заказ/i.test(g(r,"st"))?"ord":"pick";
     out.push({section,room:roomName||"Общее",name:name.slice(0,300),brand:"—",sku:"—",dims:g(r,"dims"),color:g(r,"color"),ident:g(r,"ident")||groupIdent,note:[groupNote,g(r,"note")].filter(Boolean).join("; "),url:/^https?:/i.test(g(r,"url"))?g(r,"url"):"",unit:normUnit(g(r,"unit")),qty:qty||1,price:price||(qty&&total?Math.round(total/qty*100)/100:0),st});
   }
+  out.area=area;
   return out;
 }
 async function importXls(file){
   try{
     toast("Читаю файл…");const X=await loadXlsx();
-    const wb=X.read(await file.arrayBuffer());
+    await importWorkbook(X.read(await file.arrayBuffer()),true);
+  }catch(e){console.error(e);toast("Не получилось прочитать файл: "+e.message)}
+}
+async function importWorkbook(wb,ask){
+  {const X=window.XLSX;
     const sheets=wb.SheetNames.map(n=>({n,rows:X.utils.sheet_to_json(wb.Sheets[n],{header:1,raw:false,defval:""})}));
     const best=sheets.map(sh=>({...sh,items:parseSheet(sh.rows)})).sort((a,b)=>b.items.length-a.items.length)[0];
     if(!best||!best.items.length){toast("Не нашла в файле колонку «Наименование»");return}
     const secs=new Set(best.items.map(i=>i.section).filter(Boolean));
-    if(!confirm(`Лист «${best.n}»: ${best.items.length} поз.${secs.size?` в разделах: ${[...secs].join(", ")}`:""}.\nДобавить их в спецификацию?`))return;
+    if(ask&&!confirm(`Лист «${best.n}»: ${best.items.length} поз.${secs.size?` в разделах: ${[...secs].join(", ")}`:""}.\nДобавить их в спецификацию?`))return false;
+    if(best.items.area&&!+project.area){project.area=best.items.area;saveProject()}
     const t0=Date.now();
-    best.items.forEach((d,k)=>{const it={id:newId(),created:t0+k,img:"",sup:shopName(d.url),clientPrice:0,bureauPrice:0,delivery:0,area:d.unit==="м²"?d.qty:0,perPack:0,sw:SWATCH[k%SWATCH.length],comments:[],needClient:true,variants:[],chosen:0,checklist:[],pay:{status:"none",invoice:0,paid:0},...d};allItems.push(it);save(it)});
-    room="Все";toast(`Добавлено позиций: ${best.items.length}`);render();
-  }catch(e){console.error(e);toast("Не получилось прочитать файл: "+e.message)}
+    best.items.forEach((d,k)=>{const it={id:newId(),pid,created:t0+k,img:"",sup:shopName(d.url),clientPrice:0,bureauPrice:0,delivery:0,area:d.unit==="м²"?d.qty:0,perPack:0,sw:SWATCH[k%SWATCH.length],comments:[],needClient:true,variants:[],chosen:0,checklist:[],pay:{status:"none",invoice:0,paid:0},...d};allItems.push(it);save(it)});
+    room="Все";toast(`Добавлено позиций: ${best.items.length}`);render();return true;
+  }
+}
+// Google-таблица: читаем CSV через gviz (работает для таблиц с доступом по ссылке)
+async function importSheet(url,ask){
+  const id=(url.match(/\/d\/([\w-]{20,})/)||[])[1];if(!id){toast("Это не похоже на ссылку на Google-таблицу");return false}
+  const gid=(url.match(/[#&?]gid=(\d+)/)||[])[1];
+  try{
+    toast("Загружаю Google-таблицу…");const X=await loadXlsx();
+    const q=`https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&headers=0${gid?`&gid=${gid}`:""}`;
+    const res=await fetch(q);if(!res.ok)throw new Error("код "+res.status);
+    const txt=await res.text();if(/<html/i.test(txt.slice(0,200)))throw new Error("нет доступа по ссылке");
+    const ok=await importWorkbook(X.read(txt,{type:"string",raw:true}),ask);
+    if(ok&&project.sheet!==url){project.sheet=url;saveProject()}
+    return ok;
+  }catch(e){console.error(e);toast("Не получилось загрузить таблицу ("+e.message+"). Скачайте её как Excel и нажмите «Загрузить из Excel»");return false}
 }
 async function exportXls(){
   try{
@@ -769,7 +837,7 @@ function spec(){
   return `
   <div class="toolbar">
     <div class="chips">${usedRooms.map(r=>`<button class="chip" data-room="${esc(r)}" aria-pressed="${r===room}">${esc(r)}</button>`).join("")}</div>
-    ${canAdd?`<div class="actions">${(()=>{const ids=[...selIds].filter(id=>byId(id)?.st==="pick");const nPick=items.filter(i=>i.st==="pick").length;const sel=[...selIds].filter(id=>byId(id));return (ids.length?`<button class="btn pri" id="bulkSend">Отправить дизайнеру (${ids.length})</button>`:nPick?`<button class="btn" id="selAllPick">Выбрать все в подборе (${nPick})</button>`:"")+(sel.length?`<button class="btn" id="supReq">Запрос поставщику (${sel.length})</button>`:"")})()}<input type="file" id="xlsFile" accept=".xlsx,.xls,.ods,.csv" hidden><button class="btn" id="importXls">Загрузить из Excel</button><button class="btn pri" id="addToggle">Добавить позицию</button></div>`:""}
+    ${canAdd?`<div class="actions">${(()=>{const ids=[...selIds].filter(id=>byId(id)?.st==="pick");const nPick=items.filter(i=>i.st==="pick").length;const sel=[...selIds].filter(id=>byId(id));return (ids.length?`<button class="btn pri" id="bulkSend">Отправить дизайнеру (${ids.length})</button>`:nPick?`<button class="btn" id="selAllPick">Выбрать все в подборе (${nPick})</button>`:"")+(sel.length?`<button class="btn" id="supReq">Запрос поставщику (${sel.length})</button>`:"")})()}<input type="file" id="xlsFile" accept=".xlsx,.xls,.ods,.csv" hidden><button class="btn" id="importXls">Загрузить из Excel</button><button class="btn" id="importSheet">Из Google-таблицы</button><button class="btn pri" id="addToggle">Добавить позицию</button></div>`:""}
     ${items.length?`<button class="btn" id="exportXls">Скачать Excel</button>`:""}
   </div>
   ${canAdd&&supFormOpen&&selIds.size?`<form class="add panel" id="supForm"><label class="field">Поставщик<input id="supName" list="supList" required placeholder="например, Сантехлидер" autocomplete="off"><datalist id="supList">${[...new Set([...items.map(i=>i.sup),...reqList.map(r=>r.supplier)].filter(Boolean))].map(x=>`<option value="${esc(x)}">`).join("")}</datalist></label><label class="field" style="grid-column:span 2">Сообщение поставщику<input id="supMsg" placeholder="например, нужна поставка до 15 ноября, рассмотрим аналоги"></label><div class="field" style="justify-content:flex-end"><button class="btn pri" type="submit">Создать ссылку для поставщика (${selIds.size} поз.)</button></div></form>`:""}
@@ -802,7 +870,7 @@ function spec(){
     <thead><tr><th></th><th>Позиция</th><th>Помещение</th><th class="num">Кол-во</th><th class="num">Цена</th><th class="num">Сумма</th><th>Статус</th></tr></thead>
     <tbody>${groups(list).map(g=>(g.sec!==null?`<tr class="sechead"><td colspan="7">${esc(g.sec||"Без раздела")}</td></tr>`:"")+g.rooms.map(r=>`<tr class="roomhead"><td></td><td colspan="6">${esc(r.room||"Помещение не указано")}</td></tr>`+r.items.map(i=>`<tr data-open="${i.id}"><td style="width:52px">${role==="kompl"&&!readOnly?`<input type="checkbox" class="rowsel" data-sel="${i.id}" ${selIds.has(i.id)?"checked":""} aria-label="Выбрать">`:""}<div class="sw" style="${swStyle(i)}"></div></td><td><div class="t"><span class="no">${i._no||""}</span>${esc(i.name)}</div><div class="sku">${[i.brand,i.sku,i.sup,i.ident,i.dims&&i.dims+" мм",i.color,i.note].filter(x=>x&&x!=="—").map(esc).join(" · ")}</div></td><td>${role==="kompl"&&!readOnly?roomSelect("roomOf-"+i.id,i.room,` data-room-item="${i.id}"`):esc(i.room)}</td><td class="num money">${qtyText(i)}</td><td class="num money">${rub(unitPrice(i))}${role!=="client"&&+i.clientPrice?`<div class="sku">клиенту ${rub(i.clientPrice)}</div>`:""}</td><td class="num money">${rub(sum(i))}${+i.delivery?`<div class="sku">вкл. доставку ${rub(i.delivery)}</div>`:""}${role!=="client"&&+i.bureauPrice?`<div class="sku">бюро ${rub(bureauSum(i))}</div>`:""}</td><td>${tri(i)}${supChip(i)}${i.variants?.length>1?` <span class="m">${i.variants.length} вар.</span>`:""}${i.comments?.length?` <span class="m">· ${i.comments.length} комм.</span>`:""}</td></tr>`).join("")).join("")+(g.sec!==null?`<tr class="sectot"><td></td><td colspan="4">Итого по разделу${perM2(g.total)}</td><td class="num money">${rub(g.total)}</td><td></td></tr>`:"")).join("")||`<tr><td colspan="7" class="empty">${items.length?"В этом помещении пока нет позиций":"Добавьте первую позицию кнопкой выше"}</td></tr>`}</tbody>
     <tfoot><tr><td></td><td colspan="4">Итого${room!=="Все"?" · "+esc(room):""}${perM2(tot)}</td><td class="num money">${rub(tot)}</td><td></td></tr></tfoot>
-  </table></div>`}${role==="kompl"&&!readOnly&&allItems.some(i=>i.deleted)?`<details class="panel" style="margin-top:16px"><summary style="cursor:pointer;font-weight:600">Корзина · ${allItems.filter(i=>i.deleted).length}</summary><div class="list" style="margin-top:8px">${allItems.filter(i=>i.deleted).map(i=>`<div class="row"><div class="sw" style="${swStyle(i)}"></div><div class="grow"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.room)}</div></div><button class="btn" data-restore="${i.id}">Вернуть</button></div>`).join("")}</div></details>`:""}`;
+  </table></div>`}${role==="kompl"&&!readOnly&&projItems().some(i=>i.deleted)?`<details class="panel" style="margin-top:16px"><summary style="cursor:pointer;font-weight:600">Корзина · ${projItems().filter(i=>i.deleted).length}</summary><div class="list" style="margin-top:8px">${projItems().filter(i=>i.deleted).map(i=>`<div class="row"><div class="sw" style="${swStyle(i)}"></div><div class="grow"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.room)}</div></div><button class="btn" data-restore="${i.id}">Вернуть</button></div>`).join("")}</div></details>`:""}`;
 }
 function inbox(){
   const t=mine();
@@ -894,7 +962,7 @@ document.addEventListener("click",e=>{
   if(vimg&&!e.target.closest(".pin")){const r=vimg.querySelector("img").getBoundingClientRect();pendingPin={vid:vimg.dataset.viz,x:+((e.clientX-r.left)/r.width*100).toFixed(2),y:+((e.clientY-r.top)/r.height*100).toFixed(2)};render();return}
   const cb=e.target.closest("#colNew,#colSave,#colCancel,#colFront,#colRecut,[data-colbg],[data-coledit],[data-coldel]");
   if(cb){
-    if(cb.id==="colNew"){colEdit={id:"col-"+newId(),title:"",bgId:"",tile:25,layers:[]};colSel=null}
+    if(cb.id==="colNew"){colEdit={id:"col-"+newId(),pid,title:"",bgId:"",tile:25,layers:[]};colSel=null}
     else if(cb.id==="colCancel"){colEdit=null;colSel=null}
     else if(cb.id==="colSave"){const c=colEdit;c.title=$("#colTitle").value.trim()||"Сочетание";const isNew=!c.created;if(isNew)c.created=Date.now();colList=[...colList.filter(x=>x.id!==c.id),c];colEdit=null;colSel=null;saveCol(c);toast("Сочетание сохранено")}
     else if(cb.id==="colRecut"&&colSel!=null){const it=byId(colEdit.layers[colSel].itemId);colEdit.title=$("#colTitle").value;it.imgCut="";colEdit.layers[colSel].orig=false;cutItem(it);return}
@@ -929,7 +997,7 @@ document.addEventListener("click",e=>{
     else if(vb.id==="pinCancel")pendingPin=null;
     render();return;
   }
-  const b=e.target.closest("[data-role],[data-tab],[data-room],[data-open],[data-move],[data-var],#close,#scrim,#addToggle,#importXls,#exportXls,#delBtn,#clTpl,#seedBtn,#imgFetch,#imgDel");
+  const b=e.target.closest("[data-role],[data-tab],[data-room],[data-open],[data-move],[data-var],#close,#scrim,#addToggle,#importXls,#importSheet,#exportXls,#delBtn,#clTpl,#seedBtn,#imgFetch,#imgDel");
   if(!b)return;
   if(b.id==="delBtn"){
     if(!confirmDel){confirmDel=true;renderDrawer();return}
@@ -950,6 +1018,7 @@ document.addEventListener("click",e=>{
   else if(b.id==="close"||b.id==="scrim"){openId=null;renderDrawer()}
   else if(b.id==="clTpl"){const it=byId(openId);it.checklist=CHECK_TEMPLATE.map(t=>({t,done:false}));save(it);render()}
   else if(b.id==="importXls"){$("#xlsFile").click()}
+  else if(b.id==="importSheet"){const u=prompt("Ссылка на Google-таблицу (доступ «всем, у кого есть ссылка»):",project.sheet||"");if(u)importSheet(u.trim(),true)}
   else if(b.id==="exportXls"){exportXls()}
   else if(b.id==="addToggle"){const f=$("#addForm");f.hidden=!f.hidden;if(!f.hidden)$("#fName").focus()}
 });
@@ -1013,6 +1082,7 @@ document.addEventListener("change",e=>{
   if(e.target.id==="itemSectionNew"){const nm=addSection(e.target.value);if(nm){const it=byId(openId);it.section=nm;save(it);toast("Раздел: "+nm);render()}}
   if(e.target.id==="fSection"){const n=$("#fSectionNew");n.hidden=e.target.value!=="__new";if(!n.hidden)n.focus()}
   if(e.target.id==="xlsFile"&&e.target.files[0]){importXls(e.target.files[0]);e.target.value=""}
+  if(e.target.id==="projSel"){const v=e.target.value;if(v==="__new"){e.target.value=pid;newProject();}else switchProject(v);return}
   if(e.target.id==="itemSup"){const it=byId(openId);it.sup=e.target.value.trim();save(it);toast("Поставщик сохранён");render()}
   if(e.target.id==="itemUrl"){const it=byId(openId);it.url=e.target.value.trim();if(it.url&&!it.sup)it.sup=shopName(it.url);save(it);if(it.url){toast("Ищу фото и цену на странице товара…");fetchPreview(it.url).then(r=>{const got=[];if(r.img&&!it.img){it.img=r.img;got.push("фото")}if(r.price&&!it.price){it.price=r.price;got.push("цена")}if(got.length){save(it);toast("Добавлено: "+got.join(" и "));render()}else if(!it.img||!it.price)toast("Не всё нашлось на странице. Укажите вручную.")})}render()}
   if(e.target.id==="itemBoxes"){const it=byId(openId);const b=Math.max(0,Math.round(+e.target.value||0));if(+it.perPack>0&&b){it.area=+(b*it.perPack).toFixed(3);recalc(it);save(it);render()}else toast("Сначала укажите, сколько в коробке")}
@@ -1045,7 +1115,7 @@ document.addEventListener("submit",e=>{
   }
   if(id==="vizForm"){
     if(!vizPending){toast("Сначала выберите картинку");return}
-    const v={id:"viz-"+newId(),created:Date.now(),title:$("#vzTitle").value.trim()||"Визуализация",room:$("#vzRoom").value,img:vizPending,pins:[]};
+    const v={id:"viz-"+newId(),pid,created:Date.now(),title:$("#vzTitle").value.trim()||"Визуализация",room:$("#vzRoom").value,img:vizPending,pins:[]};
     vizPending="";vizList.push(v);pinMode=v.id;saveViz(v);toast("Визуализация добавлена. Кликните по картинке, чтобы поставить метку");render();
   }
   if(id==="projForm"){
@@ -1054,14 +1124,14 @@ document.addEventListener("submit",e=>{
   }
   if(id==="addForm"){
     const sec=$("#fSection").value==="__new"?addSection($("#fSectionNew").value):$("#fSection").value;secPick=sec;
-    const it={id:newId(),created:Date.now(),section:sec,dims:$("#fDims").value.trim(),color:$("#fColor").value.trim(),ident:$("#fIdent").value.trim(),note:$("#fNote").value.trim(),room:$("#fRoom").value==="__new"?addRoom($("#fRoomNew").value):$("#fRoom").value,name:$("#fName").value.trim(),brand:$("#fBrand").value.trim()||"—",sku:$("#fSku").value.trim()||"—",sup:$("#fSup").value.trim()||shopName($("#fUrl").value.trim()),url:$("#fUrl").value.trim(),img:pendingImg,qty:Math.max(0,+$("#fQty").value||1),unit:$("#fUnit").value,area:isArea($("#fUnit").value)?+$("#fQty").value||0:0,perPack:isArea($("#fUnit").value)?+$("#fPack").value||0:0,price:+$("#fPrice").value||0,clientPrice:+$("#fCPrice").value||0,bureauPrice:+$("#fBPrice").value||0,delivery:+$("#fDeliv").value||0,sw:SWATCH[items.length%SWATCH.length],st:"pick",comments:[],needClient:$("#fNeed").checked,variants:[],chosen:0,checklist:[],pay:{status:"none",invoice:0,paid:0}};
+    const it={id:newId(),pid,created:Date.now(),section:sec,dims:$("#fDims").value.trim(),color:$("#fColor").value.trim(),ident:$("#fIdent").value.trim(),note:$("#fNote").value.trim(),room:$("#fRoom").value==="__new"?addRoom($("#fRoomNew").value):$("#fRoom").value,name:$("#fName").value.trim(),brand:$("#fBrand").value.trim()||"—",sku:$("#fSku").value.trim()||"—",sup:$("#fSup").value.trim()||shopName($("#fUrl").value.trim()),url:$("#fUrl").value.trim(),img:pendingImg,qty:Math.max(0,+$("#fQty").value||1),unit:$("#fUnit").value,area:isArea($("#fUnit").value)?+$("#fQty").value||0:0,perPack:isArea($("#fUnit").value)?+$("#fPack").value||0:0,price:+$("#fPrice").value||0,clientPrice:+$("#fCPrice").value||0,bureauPrice:+$("#fBPrice").value||0,delivery:+$("#fDeliv").value||0,sw:SWATCH[items.length%SWATCH.length],st:"pick",comments:[],needClient:$("#fNeed").checked,variants:[],chosen:0,checklist:[],pay:{status:"none",invoice:0,paid:0}};
     recalc(it);allItems.push(it);pendingImg="";e.target.reset();
     if((!it.img||!it.price)&&it.url)fetchPreview(it.url).then(r=>{let ch=false;if(r.img&&!it.img){it.img=r.img;ch=true}if(r.price&&!it.price){it.price=r.price;ch=true}if(ch){save(it);render()}});e.target.hidden=true;
     toast("Позиция добавлена в подбор");save(it);render();
   }
 });
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&openId){openId=null;confirmDel=false;renderDrawer()}});
-window.addEventListener("hashchange",()=>{if(/^#sup=/.test(location.hash)!==!!SUP_TOKEN){location.reload();return}const h=location.hash.slice(1);if(ROLES[h]){role=h;render()}});
+window.addEventListener("hashchange",()=>{if(/^#sup=/.test(location.hash)!==!!SUP_TOKEN){location.reload();return}const [h,hp]=location.hash.slice(1).split("/");if(hp&&projects.some(x=>x.id===hp)&&hp!==pid){switchProject(hp);return}if(ROLES[h]){role=h;render()}});
 render();
 connect();
 </script>
