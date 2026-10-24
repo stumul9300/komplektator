@@ -231,6 +231,18 @@ function ldPrice(texts){
   for(const t of [].concat(texts||[])){try{walk(JSON.parse(t))}catch(e){}if(found)break}
   return found;
 }
+// Проверяем, что картинка по адресу реально открывается
+function imageLoads(u,ms=6000){return new Promise(res=>{const im=new Image();const t=setTimeout(()=>res(false),ms);im.referrerPolicy="no-referrer";im.onload=()=>{clearTimeout(t);res(im.naturalWidth>1)};im.onerror=()=>{clearTimeout(t);res(false)};im.src=u})}
+// Магазины, которые закрыты от роботов: фото по артикулу из адреса
+async function shopGuess(url){
+  let u;try{u=new URL(url)}catch(e){return ""}
+  if(/(^|\.)(lemanapro|leroymerlin)\.ru$/.test(u.hostname)){
+    const code=(u.pathname.match(/(\d{6,})\/?$/)||[])[1];if(!code)return "";
+    for(const c of [`https://res.cloudinary.com/lmru/image/upload/f_auto,q_auto,w_800,h_800,c_pad,b_white/LMCode/${code}.jpg`,`https://cdn.lemanapro.ru/lmru/image/upload/f_auto,q_auto,w_800,h_800,c_pad,b_white/LMCode/${code}.jpg`])
+      if(await imageLoads(c))return c;
+  }
+  return "";
+}
 // Сначала своя функция в Supabase (supabase/functions/preview), потом запасной сервис microlink.
 async function fetchPreview(url){
   if(!/^https?:\/\//i.test(url||""))return {};
@@ -256,6 +268,7 @@ async function fetchPreview(url){
       else console.warn("microlink:",j?.code||j?.status,j?.message);
     }catch(e){console.warn("microlink недоступен",e)}
   }
+  if(!out.img)out.img=await shopGuess(url);
   return out;
 }
 function fileToDataUrl(file){return new Promise((res,rej)=>{const img=new Image();img.onload=()=>{const k=Math.min(1,480/Math.max(img.width,img.height));const c=document.createElement("canvas");c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);c.getContext("2d").drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(img.src);res(c.toDataURL("image/jpeg",.8))};img.onerror=rej;img.src=URL.createObjectURL(file)})}
@@ -430,7 +443,7 @@ function spec(){
     <label class="field">Бренд<input id="fBrand" placeholder="Производитель"></label>
     <label class="field">Артикул<input id="fSku" placeholder="Артикул поставщика"></label>
     <label class="field">Ссылка на товар<input id="fUrl" type="url" placeholder="https://"></label>
-    <div class="field">Фото<div class="imgrow"><div class="imgprev" id="fPrev" style="${pendingImg?swStyle({img:pendingImg}):""}">${pendingImg?"":"появится по ссылке"}</div><span class="btn filebtn">Загрузить<input type="file" id="fFile" accept="image/*"></span></div></div>
+    <div class="field">Фото<div class="imgrow"><div class="imgprev" id="fPrev" style="${pendingImg?swStyle({img:pendingImg}):""}">${pendingImg?"":"появится по ссылке"}</div><span class="btn filebtn">Загрузить<input type="file" id="fFile" accept="image/*"></span></div><span style="font-size:12px">или скопируйте фото в магазине и нажмите Ctrl+V</span></div>
     <label class="field">Ед.<select id="fUnit"><option>шт</option><option>м²</option><option>пог. м</option><option>компл.</option></select></label>
     <label class="field"><span id="fQtyLabel">Кол-во</span><input id="fQty" type="number" min="0" step="any" value="1"></label>
     <label class="field" id="fPackWrap" hidden>В упаковке, <span id="fPackUnit">м²</span><input id="fPack" type="number" min="0" step="any" placeholder="например, 1.44"></label>
@@ -482,7 +495,7 @@ function renderDrawer(){
   const del=!readOnly&&role==="kompl"?`<button class="btn bad" id="delBtn">${confirmDel?"Точно удалить? Нажмите ещё раз":"Удалить позицию"}</button>`:"";
   const link=safeUrl(i.url);
   const photoTop=imgOk(i.img)?`<img class="photo" src="${esc(i.img)}" alt="${esc(i.name)}">`:"";
-  const photoEdit=!readOnly&&role==="kompl"?`<div><h3>Ссылка, фото и цена</h3><div class="add" style="margin:0"><label class="field">Ссылка на товар<input id="itemUrl" type="url" value="${esc(i.url||"")}" placeholder="https://"></label><label class="field">Ед.<select id="itemUnit">${["шт","м²","пог. м","компл."].map(u=>`<option${u===(i.unit||"шт")?" selected":""}>${u}</option>`).join("")}</select></label><label class="field">${isArea(i.unit)?"Нужно, "+esc(i.unit):"Кол-во"}<input id="itemQty" type="number" min="0" step="any" value="${isArea(i.unit)?(i.area||i.qty||""):(i.qty||"")}"></label>${isArea(i.unit)?`<label class="field">В упаковке, ${esc(i.unit)}<input id="itemPack" type="number" min="0" step="any" value="${i.perPack||""}" placeholder="если продаётся упаковками"></label>`:""}<label class="field">Цена за ед., ₽<input id="itemPrice" type="number" min="0" value="${i.price||""}"></label><label class="field">Цена для клиента, ₽<input id="itemCPrice" type="number" min="0" value="${i.clientPrice||""}" placeholder="если нет точной"></label><label class="field">Цена для бюро, ₽<input id="itemBPrice" type="number" min="0" value="${i.bureauPrice||""}" placeholder="за ед."></label><label class="field">Доставка, ₽<input id="itemDeliv" type="number" min="0" value="${i.delivery||""}" placeholder="за всю позицию"></label></div><div class="actions" style="margin-top:8px">${link?`<button class="btn" id="imgFetch">Подтянуть фото и цену по ссылке</button>`:""}<span class="btn filebtn">Загрузить фото<input type="file" id="imgFile" accept="image/*"></span>${i.img?`<button class="btn bad" id="imgDel">Убрать фото</button>`:""}</div></div>`:"";
+  const photoEdit=!readOnly&&role==="kompl"?`<div><h3>Ссылка, фото и цена</h3><div class="add" style="margin:0"><label class="field">Ссылка на товар<input id="itemUrl" type="url" value="${esc(i.url||"")}" placeholder="https://"></label><label class="field">Ед.<select id="itemUnit">${["шт","м²","пог. м","компл."].map(u=>`<option${u===(i.unit||"шт")?" selected":""}>${u}</option>`).join("")}</select></label><label class="field">${isArea(i.unit)?"Нужно, "+esc(i.unit):"Кол-во"}<input id="itemQty" type="number" min="0" step="any" value="${isArea(i.unit)?(i.area||i.qty||""):(i.qty||"")}"></label>${isArea(i.unit)?`<label class="field">В упаковке, ${esc(i.unit)}<input id="itemPack" type="number" min="0" step="any" value="${i.perPack||""}" placeholder="если продаётся упаковками"></label>`:""}<label class="field">Цена за ед., ₽<input id="itemPrice" type="number" min="0" value="${i.price||""}"></label><label class="field">Цена для клиента, ₽<input id="itemCPrice" type="number" min="0" value="${i.clientPrice||""}" placeholder="если нет точной"></label><label class="field">Цена для бюро, ₽<input id="itemBPrice" type="number" min="0" value="${i.bureauPrice||""}" placeholder="за ед."></label><label class="field">Доставка, ₽<input id="itemDeliv" type="number" min="0" value="${i.delivery||""}" placeholder="за всю позицию"></label></div><div class="actions" style="margin-top:8px">${link?`<button class="btn" id="imgFetch">Подтянуть фото и цену по ссылке</button>`:""}<span class="btn filebtn">Загрузить фото<input type="file" id="imgFile" accept="image/*"></span>${i.img?`<button class="btn bad" id="imgDel">Убрать фото</button>`:""}</div><label class="field" style="margin-top:8px">Ссылка на фото<input id="itemImgUrl" type="url" placeholder="правый клик по фото в магазине → «Копировать адрес изображения»"></label><p class="m" style="color:var(--muted);font-size:13px;margin:6px 0 0">Ещё проще: на сайте магазина нажмите на фото правой кнопкой → «Копировать изображение», вернитесь сюда и нажмите Ctrl+V.</p></div>`:"";
   const isK=role==="kompl"&&!readOnly;
   const CL=i.checklist||[];
   const checklist=can("checklist")?`<div><h3>Чек-лист${CL.length?` · ${CL.filter(c=>c.done).length}/${CL.length}`:""}</h3><div class="cl">${CL.map((c,k)=>`<label class="check"><input type="checkbox" data-cl="${k}" ${c.done?"checked":""} ${isK?"":"disabled"}> <span${c.done?' class="done"':""}>${esc(c.t)}</span></label>`).join("")||`<div class="m" style="color:var(--muted);font-size:14px">Пунктов пока нет.</div>`}</div>${isK?`<form class="compose" id="clForm" style="margin-top:8px"><input id="clText" placeholder="Новый пункт" autocomplete="off"><button class="btn" type="submit">Добавить</button></form>${CL.length?"":`<button class="btn link" id="clTpl" style="margin-top:8px">Добавить типовые пункты: КП, счёт, оплата, отгрузка</button>`}`:""}</div>`:"";
@@ -553,9 +566,23 @@ function updatePackCalc(){
   const t={unit:u,area:+$("#fQty").value||0,perPack:+$("#fPack").value||0};const n=packs(t);const c=$("#fPackCalc");
   c.hidden=!n;if(n){recalc(t);const pr=+$("#fPrice").value||0;c.innerHTML=`Расчёт<b style="color:var(--fg)">${n} уп. = ${fmtN(t.qty)} ${u}${pr?" · "+fmtRub(pr*t.qty):""}</b>`}
 }
+// Вставка фото: скопируйте картинку на сайте магазина и нажмите Ctrl+V
+document.addEventListener("paste",e=>{
+  if(role!=="kompl"||readOnly)return;
+  const drawerItem=openId&&byId(openId);const form=$("#addForm");const formOpen=form&&!form.hidden;
+  if(!drawerItem&&!formOpen)return;
+  const cd=e.clipboardData;if(!cd)return;
+  const file=[...cd.items].find(x=>x.type.startsWith("image/"))?.getAsFile();
+  const text=(cd.getData("text")||"").trim();
+  const apply=img=>{if(drawerItem){drawerItem.img=img;save(drawerItem);toast("Фото добавлено");render()}else{pendingImg=img;setPrev($("#fPrev"),img)}};
+  if(file){e.preventDefault();fileToDataUrl(file).then(apply);return}
+  const tag=e.target.tagName;
+  if(/^https?:\/\/\S+\.(jpe?g|png|webp|gif|avif)(\?\S*)?$/i.test(text)&&!(tag==="INPUT"&&e.target.id!=="itemImgUrl")){e.preventDefault();apply(text)}
+});
 document.addEventListener("input",e=>{if(["fQty","fPack","fPrice"].includes(e.target.id))updatePackCalc()});
 document.addEventListener("change",e=>{
   if(e.target.id==="fUrl"){const u=e.target.value.trim();if(!u)return;$("#fPrev").textContent="ищу фото…";fetchPreview(u).then(r=>{if(r.img){pendingImg=r.img;const el=$("#fPrev");if(el){setPrev(el,r.img)}}else if($("#fPrev"))$("#fPrev").textContent="фото не найдено";if(r.title&&$("#fName")&&!$("#fName").value)$("#fName").value=r.title.slice(0,120);if(r.price&&$("#fPrice")&&!$("#fPrice").value){$("#fPrice").value=r.price;toast("Цена подставлена со страницы товара")}})}
+  if(e.target.id==="itemImgUrl"){const v=e.target.value.trim();if(/^https?:\/\//i.test(v)){const it=byId(openId);imageLoads(v).then(ok=>{if(ok){it.img=v;save(it);toast("Фото добавлено");render()}else toast("По этой ссылке картинка не открывается")})}}
   if(e.target.id==="fFile"&&e.target.files[0]){fileToDataUrl(e.target.files[0]).then(d=>{pendingImg=d;const el=$("#fPrev");setPrev(el,d)})}
   if(e.target.id==="imgFile"&&e.target.files[0]){const it=byId(openId);fileToDataUrl(e.target.files[0]).then(d=>{it.img=d;save(it);toast("Фото загружено");render()})}
   if(e.target.id==="itemUrl"){const it=byId(openId);it.url=e.target.value.trim();save(it);if(it.url){toast("Ищу фото и цену на странице товара…");fetchPreview(it.url).then(r=>{const got=[];if(r.img&&!it.img){it.img=r.img;got.push("фото")}if(r.price&&!it.price){it.price=r.price;got.push("цена")}if(got.length){save(it);toast("Добавлено: "+got.join(" и "));render()}else if(!it.img||!it.price)toast("Не всё нашлось на странице. Укажите вручную.")})}render()}
