@@ -2,6 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
+<meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Комплектатор</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -137,6 +138,11 @@ table.vis tbody tr{cursor:default}table.vis input{width:18px;height:18px;accent-
 .varwrap{display:flex;flex-direction:column;gap:4px}
 .vlink,.db a{color:var(--accent);font-size:13px}
 .empty-state{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin-top:16px}
+.sw{background-size:cover;background-position:center;background-repeat:no-repeat}
+.photo{width:100%;max-height:280px;object-fit:contain;border-radius:10px;background:var(--sunk);display:block}
+.imgprev{width:64px;height:64px;border-radius:8px;border:1px dashed var(--line);background:var(--sunk) center/cover no-repeat;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted);text-align:center}
+.imgrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.filebtn{position:relative;overflow:hidden}.filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer}
 .timeline .row .date{font-family:var(--f-mono);font-size:13px;width:92px;flex:none}
 @media (max-width:560px){.brand h1{font-size:20px}.big{font-size:26px}}
 @media (prefers-reduced-motion:no-preference){aside.drawer{animation:in .18s ease-out}@keyframes in{from{transform:translateX(24px);opacity:.6}}}
@@ -200,6 +206,22 @@ const fmtDate=d=>{if(!d)return"—";const x=new Date(d+"T00:00");return isNaN(x)
 const mine=()=>items.filter(i=>ST[i.st].owner===role);
 const byId=id=>allItems.find(i=>i.id===id);
 const safeUrl=u=>/^https?:\/\//i.test(u||"")?u:"";
+const imgOk=u=>/^(https?:\/\/|data:image\/)/i.test(u||"");
+const cssUrl=u=>esc(String(u).replace(/["'()\\\s]/g,c=>encodeURIComponent(c)));
+const swStyle=o=>`background-color:${esc(o.sw||"#C8CEC6")}`+(imgOk(o.img)?`;background-image:url(&quot;${cssUrl(o.img)}&quot;)`:"");
+let pendingImg="";
+function setPrev(el,img){el.style.backgroundImage=`url("${String(img).replace(/["\\\s]/g,c=>encodeURIComponent(c))}")`;el.textContent=""}
+// Картинка по ссылке на товар: прямая ссылка на изображение или превью страницы через microlink.io
+async function fetchPreview(url){
+  if(!/^https?:\/\//i.test(url||""))return {};
+  if(/\.(jpe?g|png|webp|gif|avif)(\?|#|$)/i.test(url))return {img:url};
+  try{
+    const r=await fetch("https://api.microlink.io/?url="+encodeURIComponent(url));
+    const j=await r.json();
+    return {img:j?.data?.image?.url||"",title:j?.data?.title||""};
+  }catch(e){return {}}
+}
+function fileToDataUrl(file){return new Promise((res,rej)=>{const img=new Image();img.onload=()=>{const k=Math.min(1,480/Math.max(img.width,img.height));const c=document.createElement("canvas");c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);c.getContext("2d").drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(img.src);res(c.toDataURL("image/jpeg",.8))};img.onerror=rej;img.src=URL.createObjectURL(file)})}
 
 function toast(t){const el=$("#toast");el.textContent=t;el.hidden=false;clearTimeout(toast.h);toast.h=setTimeout(()=>el.hidden=true,2600)}
 
@@ -267,7 +289,7 @@ function move(id,to){
   if(to==="ord"&&!it.sup)it.sup=it.brand;
   it.st=to;toast(DONE[to]);save(it);render();
 }
-function choose(it,k){const v=it.variants[k];it.chosen=k;Object.assign(it,{name:v.name,brand:v.brand,sku:v.sku,price:v.price,sw:v.sw,url:v.url||""});save(it);render()}
+function choose(it,k){const v=it.variants[k];it.chosen=k;Object.assign(it,{name:v.name,brand:v.brand,sku:v.sku,price:v.price,sw:v.sw,url:v.url||"",img:v.img||""});save(it);render()}
 
 // ---------- отрисовка ----------
 function renderHeader(){
@@ -283,7 +305,7 @@ function renderHeader(){
   $("#tabs").innerHTML=T.map(([k,t,c])=>`<button role="tab" data-tab="${k}" aria-selected="${k===tab}">${t}${c?`<span class="count">${c}</span>`:""}</button>`).join("");
 }
 function rowItem(i){
-  return `<div class="row" data-open="${i.id}" style="cursor:pointer"><div class="sw" style="background:${esc(i.sw)}"></div><div class="grow"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.room)} · <span class="money">${rub(sum(i))}</span></div></div>${pill(i.st)}</div>`;
+  return `<div class="row" data-open="${i.id}" style="cursor:pointer"><div class="sw" style="${swStyle(i)}"></div><div class="grow"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.room)} · <span class="money">${rub(sum(i))}</span></div></div>${pill(i.st)}</div>`;
 }
 function emptyAll(){
   return `<div class="panel empty-state"><h2>Пока нет ни одной позиции</h2><p class="note">${role==="kompl"&&!readOnly?"Начните со вкладки «Спецификация»: добавьте позицию, отметьте, нужно ли согласие заказчика, и отправьте дизайнеру.":"Как только комплектатор добавит позиции, они появятся здесь."}</p>${role==="kompl"&&!readOnly?`<div class="actions"><button class="btn pri" data-tab="spec">Перейти к спецификации</button><button class="btn" id="seedBtn">Заполнить примерами</button></div>`:""}</div>`;
@@ -370,6 +392,7 @@ function spec(){
     <label class="field">Бренд<input id="fBrand" placeholder="Производитель"></label>
     <label class="field">Артикул<input id="fSku" placeholder="Артикул поставщика"></label>
     <label class="field">Ссылка на товар<input id="fUrl" type="url" placeholder="https://"></label>
+    <div class="field">Фото<div class="imgrow"><div class="imgprev" id="fPrev" style="${pendingImg?swStyle({img:pendingImg}):""}">${pendingImg?"":"появится по ссылке"}</div><span class="btn filebtn">Загрузить<input type="file" id="fFile" accept="image/*"></span></div></div>
     <label class="field">Кол-во<input id="fQty" type="number" min="0" step="any" value="1"></label>
     <label class="field">Ед.<select id="fUnit"><option>шт</option><option>м²</option><option>пог. м</option><option>компл.</option></select></label>
     <label class="field">Цена за ед., ₽<input id="fPrice" type="number" min="0" required placeholder="0"></label>
@@ -378,7 +401,7 @@ function spec(){
   </form>`:""}
   ${!items.length&&!canAdd?emptyAll():`<div class="tablebox"><table>
     <thead><tr><th></th><th>Позиция</th><th>Помещение</th><th class="num">Кол-во</th><th class="num">Цена</th><th class="num">Сумма</th><th>Статус</th></tr></thead>
-    <tbody>${list.map(i=>`<tr data-open="${i.id}"><td style="width:52px"><div class="sw" style="background:${esc(i.sw)}"></div></td><td><div class="t">${esc(i.name)}</div><div class="sku">${esc(i.brand)} · ${esc(i.sku)}</div></td><td>${esc(i.room)}</td><td class="num money">${i.qty} ${esc(i.unit||"шт")}</td><td class="num money">${rub(i.price)}</td><td class="num money">${rub(sum(i))}</td><td>${pill(i.st)}${i.needClient?` <span class="m" title="Нужно согласие заказчика">· ☑ заказчик</span>`:""}${i.variants?.length>1?` <span class="m">· ${i.variants.length} вар.</span>`:""}${i.comments?.length?` <span class="m">· ${i.comments.length} комм.</span>`:""}</td></tr>`).join("")||`<tr><td colspan="7" class="empty">${items.length?"В этом помещении пока нет позиций":"Добавьте первую позицию кнопкой выше"}</td></tr>`}</tbody>
+    <tbody>${list.map(i=>`<tr data-open="${i.id}"><td style="width:52px"><div class="sw" style="${swStyle(i)}"></div></td><td><div class="t">${esc(i.name)}</div><div class="sku">${esc(i.brand)} · ${esc(i.sku)}</div></td><td>${esc(i.room)}</td><td class="num money">${i.qty} ${esc(i.unit||"шт")}</td><td class="num money">${rub(i.price)}</td><td class="num money">${rub(sum(i))}</td><td>${pill(i.st)}${i.needClient?` <span class="m" title="Нужно согласие заказчика">· ☑ заказчик</span>`:""}${i.variants?.length>1?` <span class="m">· ${i.variants.length} вар.</span>`:""}${i.comments?.length?` <span class="m">· ${i.comments.length} комм.</span>`:""}</td></tr>`).join("")||`<tr><td colspan="7" class="empty">${items.length?"В этом помещении пока нет позиций":"Добавьте первую позицию кнопкой выше"}</td></tr>`}</tbody>
     <tfoot><tr><td></td><td colspan="4">Итого${room!=="Все"?" · "+esc(room):""}</td><td class="num money">${rub(tot)}</td><td></td></tr></tfoot>
   </table></div>`}`;
 }
@@ -386,11 +409,11 @@ function inbox(){
   const t=mine();
   const hint={kompl:"Подобрать варианты, отправить дизайнеру, оформить заказ утверждённого и отметить доставку.",designer:"Проверить подбор комплектатора: согласовать или вернуть на замену. Галка «Согласовать с заказчиком» решает, пойдёт ли позиция к заказчику.",client:"Здесь позиции, которые команда отметила галкой «Согласовать с заказчиком». Откройте позицию, сравните варианты, выберите подходящий и согласуйте."}[role];
   return `<h2>Мои задачи · ${ROLES[role].name}</h2><p class="note">${hint}</p>
-  <div class="panel"><div class="list">${t.length?t.map(i=>`<div class="row"><div class="sw" style="background:${esc(i.sw)}"></div><div class="grow" data-open="${i.id}" style="cursor:pointer"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.room)} · <span class="money">${rub(sum(i))}</span> · ${ST[i.st].t}${i.variants?.length>1?` · ${i.variants.length} варианта`:""}</div></div><div class="actions">${(i.variants?.length>1&&role==="client")?`<button class="btn pri" data-open="${i.id}">Смотреть варианты</button>`:actionsFor(i).map(([l,to,c])=>`<button class="btn ${c}" data-move="${i.id}:${to}">${l}</button>`).join("")}</div></div>`).join(""):`<div class="empty">Всё разобрано. Новые задачи появятся, когда другая сторона передаст вам позицию.</div>`}</div></div>`;
+  <div class="panel"><div class="list">${t.length?t.map(i=>`<div class="row"><div class="sw" style="${swStyle(i)}"></div><div class="grow" data-open="${i.id}" style="cursor:pointer"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.room)} · <span class="money">${rub(sum(i))}</span> · ${ST[i.st].t}${i.variants?.length>1?` · ${i.variants.length} варианта`:""}</div></div><div class="actions">${(i.variants?.length>1&&role==="client")?`<button class="btn pri" data-open="${i.id}">Смотреть варианты</button>`:actionsFor(i).map(([l,to,c])=>`<button class="btn ${c}" data-move="${i.id}:${to}">${l}</button>`).join("")}</div></div>`).join(""):`<div class="empty">Всё разобрано. Новые задачи появятся, когда другая сторона передаст вам позицию.</div>`}</div></div>`;
 }
 function delivery(){
   const ord=items.filter(i=>i.st==="ord").sort((a,b)=>(a.eta||"9").localeCompare(b.eta||"9")),del=items.filter(i=>i.st==="del");
-  const r=i=>`<div class="row" data-open="${i.id}" style="cursor:pointer"><div class="date">${fmtDate(i.eta)}</div><div class="sw" style="background:${esc(i.sw)}"></div><div class="grow"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.sup||i.brand)} · ${esc(i.room)}</div></div>${pill(i.st)}</div>`;
+  const r=i=>`<div class="row" data-open="${i.id}" style="cursor:pointer"><div class="date">${fmtDate(i.eta)}</div><div class="sw" style="${swStyle(i)}"></div><div class="grow"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.sup||i.brand)} · ${esc(i.room)}</div></div>${pill(i.st)}</div>`;
   return `<div class="grid timeline">
     <section class="panel"><h3>Ожидается</h3><div class="list">${ord.map(r).join("")||`<div class="empty">Нет позиций в пути</div>`}</div></section>
     <section class="panel"><h3>Доставлено на объект</h3><div class="list">${del.map(r).join("")||`<div class="empty">Пока ничего не доставлено</div>`}</div></section>
@@ -409,12 +432,14 @@ function renderDrawer(){
   const canTick=!readOnly&&((role==="kompl"&&i.st==="pick")||(role==="designer"&&i.st==="des"));
   const canPick=!readOnly&&role==="client"&&i.st==="cli";
   const V=i.variants||[];
-  const vars=V.length>1?`<div><h3>Варианты · ${V.length}</h3><div class="vars">${V.map((v,k)=>`<div class="varwrap"><button class="var" data-var="${i.id}:${k}" aria-pressed="${k===i.chosen}" ${canPick?"":"disabled"}><span class="sw" style="background:${esc(v.sw)}"></span><span class="grow"><span class="t">${esc(v.name)}</span><span class="m">${esc(v.brand)} · <span class="money">${rub(v.price)}</span> · сумма ${rub(v.price*i.qty)}</span></span><span class="mark">${k===i.chosen?(canPick?"Выбран":"Текущий"):(canPick?"Выбрать":"")}</span></button>${safeUrl(v.url)?`<a class="vlink" href="${esc(safeUrl(v.url))}" target="_blank" rel="noopener">Открыть товар ↗</a>`:""}</div>`).join("")}</div></div>`:"";
+  const vars=V.length>1?`<div><h3>Варианты · ${V.length}</h3><div class="vars">${V.map((v,k)=>`<div class="varwrap"><button class="var" data-var="${i.id}:${k}" aria-pressed="${k===i.chosen}" ${canPick?"":"disabled"}><span class="sw" style="${swStyle(v)}"></span><span class="grow"><span class="t">${esc(v.name)}</span><span class="m">${esc(v.brand)} · <span class="money">${rub(v.price)}</span> · сумма ${rub(v.price*i.qty)}</span></span><span class="mark">${k===i.chosen?(canPick?"Выбран":"Текущий"):(canPick?"Выбрать":"")}</span></button>${safeUrl(v.url)?`<a class="vlink" href="${esc(safeUrl(v.url))}" target="_blank" rel="noopener">Открыть товар ↗</a>`:""}</div>`).join("")}</div></div>`:"";
   const addVar=!readOnly&&role==="kompl"&&i.st==="pick"?`<div><h3>Добавить вариант</h3><form class="add" id="varForm" style="margin:0"><label class="field">Название<input id="vName" required autocomplete="off"></label><label class="field">Бренд<input id="vBrand" autocomplete="off"></label><label class="field">Цена за ед., ₽<input id="vPrice" type="number" min="0" required></label><label class="field">Ссылка<input id="vUrl" type="url" placeholder="https://"></label><div class="field" style="justify-content:flex-end"><button class="btn" type="submit">Добавить вариант</button></div></form></div>`:"";
   const tick=`<label class="check"><input type="checkbox" id="needClient" ${i.needClient?"checked":""} ${canTick?"":"disabled"}> Согласовать с заказчиком</label>`;
   const eta=!readOnly&&role==="kompl"&&i.st==="ord"?`<label class="field">Дата поставки<input id="etaInput" type="date" value="${esc(i.eta||"")}"></label>`:"";
   const del=!readOnly&&role==="kompl"?`<button class="btn bad" id="delBtn">${confirmDel?"Точно удалить? Нажмите ещё раз":"Удалить позицию"}</button>`:"";
   const link=safeUrl(i.url);
+  const photoTop=imgOk(i.img)?`<img class="photo" src="${esc(i.img)}" alt="${esc(i.name)}">`:"";
+  const photoEdit=!readOnly&&role==="kompl"?`<div><h3>Ссылка и фото</h3><div class="add" style="margin:0"><label class="field">Ссылка на товар<input id="itemUrl" type="url" value="${esc(i.url||"")}" placeholder="https://"></label></div><div class="actions" style="margin-top:8px">${link?`<button class="btn" id="imgFetch">Подтянуть фото по ссылке</button>`:""}<span class="btn filebtn">Загрузить фото<input type="file" id="imgFile" accept="image/*"></span>${i.img?`<button class="btn bad" id="imgDel">Убрать фото</button>`:""}</div></div>`:"";
   const isK=role==="kompl"&&!readOnly;
   const CL=i.checklist||[];
   const checklist=can("checklist")?`<div><h3>Чек-лист${CL.length?` · ${CL.filter(c=>c.done).length}/${CL.length}`:""}</h3><div class="cl">${CL.map((c,k)=>`<label class="check"><input type="checkbox" data-cl="${k}" ${c.done?"checked":""} ${isK?"":"disabled"}> <span${c.done?' class="done"':""}>${esc(c.t)}</span></label>`).join("")||`<div class="m" style="color:var(--muted);font-size:14px">Пунктов пока нет.</div>`}</div>${isK?`<form class="compose" id="clForm" style="margin-top:8px"><input id="clText" placeholder="Новый пункт" autocomplete="off"><button class="btn" type="submit">Добавить</button></form>${CL.length?"":`<button class="btn link" id="clTpl" style="margin-top:8px">Добавить типовые пункты: КП, счёт, оплата, отгрузка</button>`}`:""}</div>`:"";
@@ -422,9 +447,11 @@ function renderDrawer(){
   const pay=can("payments")?`<div><h3>Счёт и оплата</h3>${isK?`<div class="add" style="margin:0"><label class="field">Статус<select id="payStatus">${Object.entries(PAY).map(([k,t])=>`<option value="${k}"${k===p.status?" selected":""}>${t}</option>`).join("")}</select></label><label class="field">Сумма счёта, ₽<input id="payInvoice" type="number" min="0" value="${p.invoice||""}" placeholder="${i.price*i.qty||""}"></label><label class="field">Оплачено, ₽<input id="payPaid" type="number" min="0" value="${p.paid||""}"></label></div>`:`<dl><dt>Статус</dt><dd>${PAY[p.status]}</dd><dt>Счёт</dt><dd class="money">${p.invoice?rub(p.invoice):"—"}</dd><dt>Оплачено</dt><dd class="money">${p.paid?rub(p.paid):"—"}</dd></dl>`}</div>`:"";
   const hide=isK?`<label class="check"><input type="checkbox" id="showClient" ${i.hideClient?"":"checked"}> Показывать заказчику</label>`:"";
   d.hidden=false;s.hidden=false;
-  d.innerHTML=`<div class="dh"><div class="sw" style="background:${esc(i.sw)}"></div><div style="min-width:0"><h2>${esc(i.name)}</h2>${pill(i.st)}</div><button class="close" id="close" aria-label="Закрыть">×</button></div>
+  d.innerHTML=`<div class="dh"><div class="sw" style="${swStyle(i)}"></div><div style="min-width:0"><h2>${esc(i.name)}</h2>${pill(i.st)}</div><button class="close" id="close" aria-label="Закрыть">×</button></div>
   <div class="db">
+    ${photoTop}
     <dl><dt>Помещение</dt><dd>${esc(i.room)}</dd><dt>Бренд</dt><dd>${esc(i.brand)}</dd><dt>Артикул</dt><dd class="sku">${esc(i.sku)}</dd><dt>Количество</dt><dd class="money">${i.qty} ${esc(i.unit||"шт")}</dd><dt>Цена</dt><dd class="money">${rub(i.price)}</dd><dt>Сумма</dt><dd class="money"><b>${rub(sum(i))}</b></dd>${(i.st==="ord"||i.st==="del")&&can("delivery")?`<dt>Поставка</dt><dd>${fmtDate(i.eta)} · ${esc(i.sup||i.brand)}</dd>`:""}${link?`<dt>Ссылка</dt><dd><a href="${esc(link)}" target="_blank" rel="noopener">Открыть товар ↗</a></dd>`:""}</dl>
+    ${photoEdit}
     ${tick}
     ${hide}
     ${vars}
@@ -455,7 +482,7 @@ function render(){
 
 // ---------- события ----------
 document.addEventListener("click",e=>{
-  const b=e.target.closest("[data-role],[data-tab],[data-room],[data-open],[data-move],[data-var],#close,#scrim,#addToggle,#delBtn,#clTpl,#seedBtn");
+  const b=e.target.closest("[data-role],[data-tab],[data-room],[data-open],[data-move],[data-var],#close,#scrim,#addToggle,#delBtn,#clTpl,#seedBtn,#imgFetch,#imgDel");
   if(!b)return;
   if(b.id==="delBtn"){
     if(!confirmDel){confirmDel=true;renderDrawer();return}
@@ -465,6 +492,8 @@ document.addEventListener("click",e=>{
   }
   confirmDel=false;
   if(b.id==="seedBtn"){seedExamples();return}
+  if(b.id==="imgDel"){const it=byId(openId);it.img="";save(it);render();return}
+  if(b.id==="imgFetch"){const it=byId(openId);toast("Ищу фото на странице товара…");fetchPreview(it.url).then(r=>{if(r.img){it.img=r.img;save(it);toast("Фото добавлено");render()}else toast("Не получилось найти фото. Загрузите его вручную.")});return}
   if(b.dataset.var){const[id,k]=b.dataset.var.split(":");choose(byId(id),+k)}
   else if(b.dataset.role){role=b.dataset.role;try{localStorage.setItem("k-role",role)}catch(_){}toast("Вы смотрите как "+ROLES[role].name.toLowerCase());render()}
   else if(b.dataset.tab){tab=b.dataset.tab;render()}
@@ -476,6 +505,10 @@ document.addEventListener("click",e=>{
   else if(b.id==="addToggle"){const f=$("#addForm");f.hidden=!f.hidden;if(!f.hidden)$("#fName").focus()}
 });
 document.addEventListener("change",e=>{
+  if(e.target.id==="fUrl"){const u=e.target.value.trim();if(!u)return;$("#fPrev").textContent="ищу фото…";fetchPreview(u).then(r=>{if(r.img){pendingImg=r.img;const el=$("#fPrev");if(el){setPrev(el,r.img)}}else if($("#fPrev"))$("#fPrev").textContent="фото не найдено";if(r.title&&$("#fName")&&!$("#fName").value)$("#fName").value=r.title.slice(0,120)})}
+  if(e.target.id==="fFile"&&e.target.files[0]){fileToDataUrl(e.target.files[0]).then(d=>{pendingImg=d;const el=$("#fPrev");setPrev(el,d)})}
+  if(e.target.id==="imgFile"&&e.target.files[0]){const it=byId(openId);fileToDataUrl(e.target.files[0]).then(d=>{it.img=d;save(it);toast("Фото загружено");render()})}
+  if(e.target.id==="itemUrl"){const it=byId(openId);it.url=e.target.value.trim();save(it);if(it.url&&!it.img){toast("Ищу фото на странице товара…");fetchPreview(it.url).then(r=>{if(r.img){it.img=r.img;save(it);toast("Фото добавлено");render()}else toast("Не получилось найти фото. Загрузите его вручную.")})}render()}
   if(e.target.id==="needClient"){const it=byId(openId);it.needClient=e.target.checked;toast(it.needClient?"Позиция пойдёт на согласование заказчику":"Заказчику согласовывать не нужно");save(it);render()}
   if(e.target.dataset.vis){const[r,f]=e.target.dataset.vis.split(":");const v=structuredClone(project.vis||VIS_DEFAULT);v[r]={...v[r],[f]:e.target.checked};project.vis=v;saveProject();toast(`${ROLES[r].name}: «${VIS_FEATURES.find(x=>x[0]===f)[1]}» ${e.target.checked?"видно":"скрыто"}`);render()}
   if(e.target.dataset.cl!==undefined){const it=byId(openId);it.checklist[+e.target.dataset.cl].done=e.target.checked;save(it);render()}
@@ -491,8 +524,9 @@ document.addEventListener("submit",e=>{
   if(id==="varForm"){
     const it=byId(openId),n=$("#vName").value.trim();if(!n)return;
     const V=it.variants||[];
-    if(!V.length)V.push({name:it.name,brand:it.brand,sku:it.sku,price:it.price,sw:it.sw,url:it.url||""});
-    V.push({name:n,brand:$("#vBrand").value.trim()||"—",sku:"—",price:+$("#vPrice").value||0,sw:SWATCH[V.length%SWATCH.length],url:$("#vUrl").value.trim()});
+    if(!V.length)V.push({name:it.name,brand:it.brand,sku:it.sku,price:it.price,sw:it.sw,url:it.url||"",img:it.img||""});
+    const nv={name:n,brand:$("#vBrand").value.trim()||"—",sku:"—",price:+$("#vPrice").value||0,sw:SWATCH[V.length%SWATCH.length],url:$("#vUrl").value.trim(),img:""};V.push(nv);
+    if(nv.url)fetchPreview(nv.url).then(r=>{if(r.img){nv.img=r.img;save(it);render()}});
     it.variants=V;if(it.chosen==null)it.chosen=0;
     toast("Вариант добавлен");save(it);render();
   }
@@ -501,8 +535,9 @@ document.addEventListener("submit",e=>{
     toast("Данные проекта сохранены");saveProject();render();
   }
   if(id==="addForm"){
-    const it={id:newId(),created:Date.now(),room:$("#fRoom").value,name:$("#fName").value.trim(),brand:$("#fBrand").value.trim()||"—",sku:$("#fSku").value.trim()||"—",url:$("#fUrl").value.trim(),qty:Math.max(0,+$("#fQty").value||1),unit:$("#fUnit").value,price:+$("#fPrice").value||0,sw:SWATCH[items.length%SWATCH.length],st:"pick",comments:[],needClient:$("#fNeed").checked,variants:[],chosen:0,checklist:[],pay:{status:"none",invoice:0,paid:0}};
-    allItems.push(it);e.target.reset();e.target.hidden=true;
+    const it={id:newId(),created:Date.now(),room:$("#fRoom").value,name:$("#fName").value.trim(),brand:$("#fBrand").value.trim()||"—",sku:$("#fSku").value.trim()||"—",url:$("#fUrl").value.trim(),img:pendingImg,qty:Math.max(0,+$("#fQty").value||1),unit:$("#fUnit").value,price:+$("#fPrice").value||0,sw:SWATCH[items.length%SWATCH.length],st:"pick",comments:[],needClient:$("#fNeed").checked,variants:[],chosen:0,checklist:[],pay:{status:"none",invoice:0,paid:0}};
+    allItems.push(it);pendingImg="";e.target.reset();
+    if(!it.img&&it.url)fetchPreview(it.url).then(r=>{if(r.img){it.img=r.img;save(it);render()}});e.target.hidden=true;
     toast("Позиция добавлена в подбор");save(it);render();
   }
 });
