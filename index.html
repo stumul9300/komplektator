@@ -91,6 +91,14 @@ tbody tr:hover td{background:var(--sunk)}
 td.num,th.num{text-align:right}
 .sku{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
 tfoot td{font-weight:600;border-bottom:0}
+.supitem{display:grid;grid-template-columns:120px 1fr;gap:16px;margin-bottom:14px}
+.supitem .ph{width:120px;height:120px;border-radius:10px;background:var(--sunk) center/cover no-repeat}
+.supitem h3{margin:0 0 4px;text-transform:none;letter-spacing:0;font-size:16px;color:var(--ink)}
+.supitem .add{margin:10px 0 0}
+.ansbox{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:8px;font-size:14px}
+.ansbox .who{font-weight:600}
+.reqlink{display:flex;gap:6px;align-items:center;margin-top:6px}.reqlink input{flex:1;min-width:0;font-family:var(--f-mono);font-size:12px}
+@media (max-width:640px){.supitem{grid-template-columns:1fr}.supitem .ph{width:100%;height:200px}}
 tr.sechead td{background:var(--sunk);font-weight:700;text-transform:uppercase;letter-spacing:.04em;font-size:13px;cursor:default}
 tr.roomhead td{font-size:13px;color:var(--muted);font-weight:600;padding-top:8px;padding-bottom:6px;cursor:default}
 tr.sectot td{font-weight:600;cursor:default}
@@ -402,13 +410,15 @@ async function loadAll(){
   backupLocal();
   const rows=b.data||[];const main=rows.find(r=>r.id==="main");if(main)project={...project,...main.data};
   vizList=rows.filter(r=>r.id.startsWith("viz-")).map(r=>({id:r.id,...r.data})).sort((x,y)=>(x.created||0)-(y.created||0));
+  reqList=rows.filter(r=>r.id.startsWith("req-")).map(r=>({id:r.id,...r.data})).sort((x,y)=>(y.created||0)-(x.created||0));
   colList=rows.filter(r=>r.id.startsWith("col-")).map(r=>({id:r.id,...r.data})).sort((x,y)=>(x.created||0)-(y.created||0));
   loaded=true;render();
 }
-let reloadT,lostItems=[];
+let reloadT,lostItems=[],reqList=[];
 async function connect(){
   if(!SUPABASE_URL||!SUPABASE_KEY||!window.supabase){offline=true;loaded=true;render();return}
   sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+  if(SUP_TOKEN){await loadSupReq();return}
   await loadAll();
   sb.channel("komplektator").on("postgres_changes",{event:"*",schema:"public"},()=>{clearTimeout(reloadT);reloadT=setTimeout(loadAll,300)}).subscribe();
 }
@@ -619,6 +629,61 @@ function projectPanel(){
   </form></details>`;
 }
 let secPick="";
+// ---------- Запросы поставщику ----------
+// Комплектатор выделяет позиции и создаёт запрос: отдельная строка req-<токен> в таблице project.
+// Поставщик открывает ссылку #sup=<токен> и видит только копию этих позиций, без цен для клиента и бюджета.
+const SUP_TOKEN=(location.hash.match(/^#sup=([\w-]+)/)||[])[1]||"";
+let supFormOpen=false,supReq=null,supErr="";
+const ANS={have:"Есть в наличии",order:"Под заказ",alt:"Нет, предлагаю замену",none:"Нет и замены нет"};
+const reqLink=r=>location.origin+location.pathname+"#sup="+r.id.slice(4);
+const reqsOf=i=>reqList.filter(r=>(r.items||[]).some(x=>x.id===i.id));
+function supChip(i){const rs=reqsOf(i);if(!rs.length)return "";const ans=rs.filter(r=>r.answers?.[i.id]);return ` <span class="m" style="color:var(${ans.length?"--s-ok":"--s-des"})">· ${ans.length?"поставщик ответил":"ждём поставщика"}</span>`}
+function reqPanel(){
+  if(!reqList.length)return "";
+  return `<details class="panel" style="margin-bottom:16px"${reqList.some(r=>Date.now()-(r.created||0)<60000)?" open":""}><summary style="cursor:pointer;font-weight:600">Запросы поставщикам · ${reqList.length}</summary><div class="list" style="margin-top:8px">${reqList.map(r=>{const n=(r.items||[]).length,a=Object.keys(r.answers||{}).length;return `<div class="row" style="display:block"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>${esc(r.supplier)}</b><span class="m">${new Date(r.created).toLocaleDateString("ru-RU")} · ${n} поз. · ответов ${a} из ${n}</span><button class="btn link" data-reqdel="${r.id}" style="margin-left:auto">Удалить</button></div><div class="m">${(r.items||[]).map(x=>esc(x.name)).join(", ")}</div><div class="reqlink"><input id="lnk-${r.id}" readonly value="${esc(reqLink(r))}"><button class="btn" data-copy="lnk-${r.id}">Копировать ссылку</button></div></div>`}).join("")}</div></details>`;
+}
+function supAnswers(i){
+  const rs=reqsOf(i);if(!rs.length)return "";
+  return `<div><h3>Ответы поставщиков</h3>${rs.map(r=>{const a=r.answers?.[i.id];return `<div class="ansbox"><div class="who">${esc(r.supplier)}</div>${a?`<div>${ANS[a.status]||""}${+a.price?` · <span class="money">${rub(+a.price)}</span> за ед.`:""}${a.eta?` · срок: ${esc(a.eta)}`:""}</div>${a.altName||a.altSku?`<div>Замена: ${esc(a.altName||"")}${a.altSku?` · арт. ${esc(a.altSku)}`:""}${+a.altPrice?` · <span class="money">${rub(+a.altPrice)}</span>`:""}${safeUrl(a.altUrl)?` · <a href="${esc(safeUrl(a.altUrl))}" target="_blank" rel="noopener">ссылка ↗</a>`:""}</div>`:""}${a.comment?`<div class="m">«${esc(a.comment)}»</div>`:""}<div class="actions" style="margin-top:6px">${+a.price?`<button class="btn" data-takeprice="${r.id}|${i.id}">Взять эту цену</button>`:""}${a.altName||a.altSku?`<button class="btn" data-takealt="${r.id}|${i.id}">Добавить замену как вариант</button>`:""}</div>`:`<div class="m">Ждём ответа</div>`}</div>`}).join("")}</div>`;
+}
+async function createSupReq(){
+  const supplier=$("#supName").value.trim();if(!supplier)return;
+  const token=Array.from(crypto.getRandomValues(new Uint8Array(12)),b=>"abcdefghijkmnpqrstuvwxyz23456789"[b%32]).join("");
+  const its=[...selIds].map(byId).filter(Boolean).map(i=>({id:i.id,name:i.name,brand:i.brand,sku:i.sku,qty:i.qty,unit:i.unit||"шт",dims:i.dims||"",color:i.color||"",ident:i.ident||"",url:i.url||"",img:imgOk(i.img)&&String(i.img).length<300000?i.img:""}));
+  const r={id:"req-"+token,supplier,msg:$("#supMsg").value.trim(),project:project.name||"",created:Date.now(),items:its,answers:{}};
+  reqList=[r,...reqList];selIds.clear();supFormOpen=false;render();
+  if(sb){const {id,...data}=r;const {error}=await sb.from("project").upsert({id,data});if(error){handleWriteError(error);return}}
+  const inp=document.getElementById("lnk-"+r.id);
+  try{await navigator.clipboard.writeText(reqLink(r));toast("Ссылка для поставщика скопирована, отправьте её менеджеру")}catch(e){toast("Ссылка создана, скопируйте её в «Запросах поставщикам»")}
+  inp?.scrollIntoView({block:"center"});
+}
+async function loadSupReq(){
+  const {data,error}=await sb.from("project").select("*").eq("id","req-"+SUP_TOKEN);
+  supErr=error?"Нет связи с базой данных":"";supReq=data&&data[0]?{id:data[0].id,...data[0].data}:null;loaded=true;render();
+}
+function renderSupplier(){
+  document.querySelector(".roles")?.setAttribute("hidden","");$("#tabs").innerHTML="";$("#drawer").hidden=true;
+  const r=supReq;$("#pName").textContent=r?"Запрос на наличие и цены":"Запрос поставщику";
+  $("#pSub").textContent=r?`Для: ${r.supplier}`:"";
+  if(!loaded){$("#main").innerHTML=`<div class="empty">Загружаю запрос…</div>`;return}
+  if(!r){$("#main").innerHTML=`<div class="empty">${supErr||"Запрос не найден. Возможно, его удалили, попросите новую ссылку."}</div>`;return}
+  const A=r.answers||{};
+  $("#main").innerHTML=`<p class="note">${r.msg?esc(r.msg)+"<br>":""}Укажите по каждой позиции наличие и цену. Если товара нет, предложите замену: название, артикул, ссылку и цену. Ответ сохраняется кнопкой «Отправить ответ», его сразу увидит комплектатор.</p>
+  ${(r.items||[]).map(x=>{const a=A[x.id]||{};return `<article class="panel supitem"><div class="ph" style="${imgOk(x.img)?`background-image:url(&quot;${cssUrl(x.img)}&quot;)`:""}"></div><div><h3>${esc(x.name)}</h3><div class="sku">${[x.brand,x.sku,x.ident,x.dims&&x.dims+" мм",x.color].filter(v=>v&&v!=="—").map(esc).join(" · ")}</div><div style="margin-top:4px">Нужно: <b>${fmtN(x.qty)} ${esc(x.unit)}</b>${safeUrl(x.url)?` · <a href="${esc(safeUrl(x.url))}" target="_blank" rel="noopener">товар ↗</a>`:""}</div>
+  <form class="add" data-ans="${esc(x.id)}"><label class="field">Наличие<select name="status">${Object.entries(ANS).map(([k,t])=>`<option value="${k}"${a.status===k?" selected":""}>${t}</option>`).join("")}</select></label><label class="field">Цена за ед., ₽<input name="price" type="number" min="0" step="any" value="${esc(a.price||"")}"></label><label class="field">Срок поставки<input name="eta" value="${esc(a.eta||"")}" placeholder="например, 2 недели"></label>
+  <label class="field">Замена: название<input name="altName" value="${esc(a.altName||"")}"></label><label class="field">Артикул замены<input name="altSku" value="${esc(a.altSku||"")}"></label><label class="field">Ссылка на замену<input name="altUrl" type="url" value="${esc(a.altUrl||"")}" placeholder="https://"></label><label class="field">Цена замены, ₽<input name="altPrice" type="number" min="0" step="any" value="${esc(a.altPrice||"")}"></label>
+  <label class="field" style="grid-column:1/-1">Комментарий<input name="comment" value="${esc(a.comment||"")}"></label><div class="field" style="justify-content:flex-end;flex-direction:row;align-items:center;gap:10px">${a.at?`<span class="m" style="color:var(--s-ok)">✓ Ответ отправлен ${new Date(a.at).toLocaleString("ru-RU",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}</span>`:""}<button class="btn pri" type="submit">${a.at?"Обновить ответ":"Отправить ответ"}</button></div></form></div></article>`}).join("")}`;
+}
+async function saveAnswer(form){
+  const f=new FormData(form),a={at:Date.now()};for(const[k,v]of f.entries())a[k]=String(v).trim();
+  const iid=form.dataset.ans;
+  const {data,error}=await sb.from("project").select("*").eq("id","req-"+SUP_TOKEN);
+  if(error||!data?.[0]){toast("Не удалось сохранить, попробуйте ещё раз");return}
+  const cur=data[0].data;cur.answers={...(cur.answers||{}),[iid]:a};
+  const r2=await sb.from("project").upsert({id:data[0].id,data:cur});
+  if(r2.error){toast("Не удалось сохранить: "+r2.error.message);return}
+  supReq={id:data[0].id,...cur};toast("Ответ отправлен");render();
+}
 // ---------- Excel: загрузка сметы и выгрузка в том же виде ----------
 let xlsxReady;
 function loadXlsx(){return xlsxReady||=new Promise((res,rej)=>{if(window.XLSX)return res(window.XLSX);const sc=document.createElement("script");sc.src="vendor/xlsx.full.min.js";sc.onload=()=>res(window.XLSX);sc.onerror=()=>{xlsxReady=null;rej(new Error("не загрузилась библиотека Excel"))};document.head.appendChild(sc)})}
@@ -704,9 +769,11 @@ function spec(){
   return `
   <div class="toolbar">
     <div class="chips">${usedRooms.map(r=>`<button class="chip" data-room="${esc(r)}" aria-pressed="${r===room}">${esc(r)}</button>`).join("")}</div>
-    ${canAdd?`<div class="actions">${(()=>{const ids=[...selIds].filter(id=>byId(id)?.st==="pick");const nPick=items.filter(i=>i.st==="pick").length;return ids.length?`<button class="btn pri" id="bulkSend">Отправить дизайнеру (${ids.length})</button>`:nPick?`<button class="btn" id="selAllPick">Выбрать все в подборе (${nPick})</button>`:""})()}<input type="file" id="xlsFile" accept=".xlsx,.xls,.ods,.csv" hidden><button class="btn" id="importXls">Загрузить из Excel</button><button class="btn pri" id="addToggle">Добавить позицию</button></div>`:""}
+    ${canAdd?`<div class="actions">${(()=>{const ids=[...selIds].filter(id=>byId(id)?.st==="pick");const nPick=items.filter(i=>i.st==="pick").length;const sel=[...selIds].filter(id=>byId(id));return (ids.length?`<button class="btn pri" id="bulkSend">Отправить дизайнеру (${ids.length})</button>`:nPick?`<button class="btn" id="selAllPick">Выбрать все в подборе (${nPick})</button>`:"")+(sel.length?`<button class="btn" id="supReq">Запрос поставщику (${sel.length})</button>`:"")})()}<input type="file" id="xlsFile" accept=".xlsx,.xls,.ods,.csv" hidden><button class="btn" id="importXls">Загрузить из Excel</button><button class="btn pri" id="addToggle">Добавить позицию</button></div>`:""}
     ${items.length?`<button class="btn" id="exportXls">Скачать Excel</button>`:""}
   </div>
+  ${canAdd&&supFormOpen&&selIds.size?`<form class="add panel" id="supForm"><label class="field">Поставщик<input id="supName" list="supList" required placeholder="например, Сантехлидер" autocomplete="off"><datalist id="supList">${[...new Set([...items.map(i=>i.sup),...reqList.map(r=>r.supplier)].filter(Boolean))].map(x=>`<option value="${esc(x)}">`).join("")}</datalist></label><label class="field" style="grid-column:span 2">Сообщение поставщику<input id="supMsg" placeholder="например, нужна поставка до 15 ноября, рассмотрим аналоги"></label><div class="field" style="justify-content:flex-end"><button class="btn pri" type="submit">Создать ссылку для поставщика (${selIds.size} поз.)</button></div></form>`:""}
+  ${canAdd?reqPanel():""}
   ${canAdd?`<form class="add panel" id="addForm" ${items.length?"hidden":""}>
     <label class="field">Наименование<input id="fName" required placeholder="Например, кресло Lounge"></label>
     <label class="field">Помещение${roomSelect("fRoom",room!=="Все"?room:""," required")}<input id="fRoomNew" placeholder="Название помещения" hidden></label>
@@ -733,7 +800,7 @@ function spec(){
   </form>`:""}
   ${!items.length&&!canAdd?emptyAll():`<div class="tablebox"><table>
     <thead><tr><th></th><th>Позиция</th><th>Помещение</th><th class="num">Кол-во</th><th class="num">Цена</th><th class="num">Сумма</th><th>Статус</th></tr></thead>
-    <tbody>${groups(list).map(g=>(g.sec!==null?`<tr class="sechead"><td colspan="7">${esc(g.sec||"Без раздела")}</td></tr>`:"")+g.rooms.map(r=>`<tr class="roomhead"><td></td><td colspan="6">${esc(r.room||"Помещение не указано")}</td></tr>`+r.items.map(i=>`<tr data-open="${i.id}"><td style="width:52px">${role==="kompl"&&!readOnly&&i.st==="pick"?`<input type="checkbox" class="rowsel" data-sel="${i.id}" ${selIds.has(i.id)?"checked":""} aria-label="Выбрать">`:""}<div class="sw" style="${swStyle(i)}"></div></td><td><div class="t"><span class="no">${i._no||""}</span>${esc(i.name)}</div><div class="sku">${[i.brand,i.sku,i.sup,i.ident,i.dims&&i.dims+" мм",i.color,i.note].filter(x=>x&&x!=="—").map(esc).join(" · ")}</div></td><td>${role==="kompl"&&!readOnly?roomSelect("roomOf-"+i.id,i.room,` data-room-item="${i.id}"`):esc(i.room)}</td><td class="num money">${qtyText(i)}</td><td class="num money">${rub(unitPrice(i))}${role!=="client"&&+i.clientPrice?`<div class="sku">клиенту ${rub(i.clientPrice)}</div>`:""}</td><td class="num money">${rub(sum(i))}${+i.delivery?`<div class="sku">вкл. доставку ${rub(i.delivery)}</div>`:""}${role!=="client"&&+i.bureauPrice?`<div class="sku">бюро ${rub(bureauSum(i))}</div>`:""}</td><td>${tri(i)}${i.variants?.length>1?` <span class="m">${i.variants.length} вар.</span>`:""}${i.comments?.length?` <span class="m">· ${i.comments.length} комм.</span>`:""}</td></tr>`).join("")).join("")+(g.sec!==null?`<tr class="sectot"><td></td><td colspan="4">Итого по разделу${perM2(g.total)}</td><td class="num money">${rub(g.total)}</td><td></td></tr>`:"")).join("")||`<tr><td colspan="7" class="empty">${items.length?"В этом помещении пока нет позиций":"Добавьте первую позицию кнопкой выше"}</td></tr>`}</tbody>
+    <tbody>${groups(list).map(g=>(g.sec!==null?`<tr class="sechead"><td colspan="7">${esc(g.sec||"Без раздела")}</td></tr>`:"")+g.rooms.map(r=>`<tr class="roomhead"><td></td><td colspan="6">${esc(r.room||"Помещение не указано")}</td></tr>`+r.items.map(i=>`<tr data-open="${i.id}"><td style="width:52px">${role==="kompl"&&!readOnly?`<input type="checkbox" class="rowsel" data-sel="${i.id}" ${selIds.has(i.id)?"checked":""} aria-label="Выбрать">`:""}<div class="sw" style="${swStyle(i)}"></div></td><td><div class="t"><span class="no">${i._no||""}</span>${esc(i.name)}</div><div class="sku">${[i.brand,i.sku,i.sup,i.ident,i.dims&&i.dims+" мм",i.color,i.note].filter(x=>x&&x!=="—").map(esc).join(" · ")}</div></td><td>${role==="kompl"&&!readOnly?roomSelect("roomOf-"+i.id,i.room,` data-room-item="${i.id}"`):esc(i.room)}</td><td class="num money">${qtyText(i)}</td><td class="num money">${rub(unitPrice(i))}${role!=="client"&&+i.clientPrice?`<div class="sku">клиенту ${rub(i.clientPrice)}</div>`:""}</td><td class="num money">${rub(sum(i))}${+i.delivery?`<div class="sku">вкл. доставку ${rub(i.delivery)}</div>`:""}${role!=="client"&&+i.bureauPrice?`<div class="sku">бюро ${rub(bureauSum(i))}</div>`:""}</td><td>${tri(i)}${supChip(i)}${i.variants?.length>1?` <span class="m">${i.variants.length} вар.</span>`:""}${i.comments?.length?` <span class="m">· ${i.comments.length} комм.</span>`:""}</td></tr>`).join("")).join("")+(g.sec!==null?`<tr class="sectot"><td></td><td colspan="4">Итого по разделу${perM2(g.total)}</td><td class="num money">${rub(g.total)}</td><td></td></tr>`:"")).join("")||`<tr><td colspan="7" class="empty">${items.length?"В этом помещении пока нет позиций":"Добавьте первую позицию кнопкой выше"}</td></tr>`}</tbody>
     <tfoot><tr><td></td><td colspan="4">Итого${room!=="Все"?" · "+esc(room):""}${perM2(tot)}</td><td class="num money">${rub(tot)}</td><td></td></tr></tfoot>
   </table></div>`}${role==="kompl"&&!readOnly&&allItems.some(i=>i.deleted)?`<details class="panel" style="margin-top:16px"><summary style="cursor:pointer;font-weight:600">Корзина · ${allItems.filter(i=>i.deleted).length}</summary><div class="list" style="margin-top:8px">${allItems.filter(i=>i.deleted).map(i=>`<div class="row"><div class="sw" style="${swStyle(i)}"></div><div class="grow"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.room)}</div></div><button class="btn" data-restore="${i.id}">Вернуть</button></div>`).join("")}</div></details>`:""}`;
 }
@@ -797,6 +864,7 @@ function renderDrawer(){
     ${acts.length?`<div class="actions">${acts.map(([l,to,c])=>`<button class="btn ${c}" data-move="${i.id}:${to}">${l}</button>`).join("")}</div>`:`<div class="wait">${readOnly?"У вас доступ только на просмотр.":owner?`Сейчас ход за ролью «${ROLES[owner].name}».`:"Позиция закрыта."}</div>`}
     ${eta}
     ${addVar}
+    ${isK?supAnswers(i):""}
     ${checklist}
     ${pay}
     <div><h3>Обсуждение</h3><div class="msgs">${(i.comments||[]).map(c=>`<div class="msg"><div class="who">${ROLES[c.r]?.name||"Участник"}<time>${esc(c.d)}</time></div>${esc(c.t)}</div>`).join("")||`<div class="m" style="color:var(--muted);font-size:14px">Комментариев пока нет.</div>`}</div></div>
@@ -807,6 +875,7 @@ function renderDrawer(){
 }
 
 function render(){
+  if(SUP_TOKEN){renderSupplier();return}
   renderHeader();
   const focusId=document.activeElement?.id;
   const addOpen=$("#addForm")&&!$("#addForm").hidden;
@@ -837,6 +906,11 @@ document.addEventListener("click",e=>{
     render();return;
   }
   if(e.target.id==="toM2"){const it=byId(openId);it.area=+it.qty||0;it.unit="м²";recalc(it);save(it);render();setTimeout(()=>$("#itemPack")?.focus(),0);return}
+  if(e.target.id==="supReq"){supFormOpen=true;render();$("#supName")?.focus();return}
+  if(e.target.dataset.copy){const inp=document.getElementById(e.target.dataset.copy);inp.select();(navigator.clipboard?.writeText(inp.value)||Promise.reject()).then(()=>toast("Ссылка скопирована"),()=>{document.execCommand("copy");toast("Ссылка скопирована")});return}
+  if(e.target.dataset.reqdel){const id=e.target.dataset.reqdel;if(!confirm("Удалить запрос? Ссылка у поставщика перестанет работать."))return;reqList=reqList.filter(r=>r.id!==id);render();sb?.from("project").delete().eq("id",id).then(({error})=>error&&handleWriteError(error));return}
+  if(e.target.dataset.takeprice){const [rid,iid]=e.target.dataset.takeprice.split("|");const r=reqList.find(x=>x.id===rid),a=r?.answers?.[iid],it=byId(iid);if(a&&it){it.price=+a.price;it.sup=r.supplier;save(it);toast("Цена и поставщик подставлены");render()}return}
+  if(e.target.dataset.takealt){const [rid,iid]=e.target.dataset.takealt.split("|");const r=reqList.find(x=>x.id===rid),a=r?.answers?.[iid],it=byId(iid);if(a&&it){const V=it.variants||[];if(!V.length)V.push({name:it.name,brand:it.brand,sku:it.sku,price:it.price,clientPrice:it.clientPrice||0,sw:it.sw,url:it.url||"",img:it.img||""});V.push({name:a.altName||"Замена от "+r.supplier,brand:r.supplier,sku:a.altSku||"—",price:+a.altPrice||0,sw:SWATCH[V.length%SWATCH.length],url:a.altUrl||"",img:""});it.variants=V;if(it.chosen==null)it.chosen=0;save(it);toast("Замена добавлена вариантом");render()}return}
   if(e.target.id==="bulkSend"){const ids=[...selIds].filter(id=>byId(id)?.st==="pick");selIds.clear();bulkMove(ids,"des");return}
   if(e.target.id==="selAllPick"){items.filter(i=>i.st==="pick"&&(room==="Все"||i.room===room)).forEach(i=>selIds.add(i.id));render();return}
   if(e.target.id==="bulkPick"){bulkMove(items.filter(i=>i.st==="pick").map(i=>i.id),"des");return}
@@ -956,6 +1030,8 @@ document.addEventListener("change",e=>{
 document.addEventListener("submit",e=>{
   e.preventDefault();
   const id=e.target.id;
+  if(e.target.dataset.ans){saveAnswer(e.target);return}
+  if(id==="supForm"){createSupReq();return}
   if(id==="compose"){const t=$("#cText").value.trim();if(!t)return;const it=byId(openId);it.comments=[...(it.comments||[]),{r:role,t,d:now()}];$("#cText").value="";save(it);render();$("#cText")?.focus()}
   if(id==="clForm"){const t=$("#clText").value.trim();if(!t)return;const it=byId(openId);it.checklist=[...(it.checklist||[]),{t,done:false}];save(it);render();$("#clText")?.focus()}
   if(id==="varForm"){
@@ -985,7 +1061,7 @@ document.addEventListener("submit",e=>{
   }
 });
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&openId){openId=null;confirmDel=false;renderDrawer()}});
-window.addEventListener("hashchange",()=>{const h=location.hash.slice(1);if(ROLES[h]){role=h;render()}});
+window.addEventListener("hashchange",()=>{if(/^#sup=/.test(location.hash)!==!!SUP_TOKEN){location.reload();return}const h=location.hash.slice(1);if(ROLES[h]){role=h;render()}});
 render();
 connect();
 </script>
