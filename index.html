@@ -376,7 +376,7 @@ function renderHeader(){
   $("#pName").textContent=project.name||"Новый проект";
   $("#pSub").textContent=offline?"Тестовая версия · данные не сохраняются в этом окне":(project.address||"Тестовая версия");
   $("#roleSeg").innerHTML=Object.entries(ROLES).map(([k,v])=>`<button data-role="${k}" aria-pressed="${k===role}">${v.name}</button>`).join("");
-  items=role==="client"?allItems.filter(i=>!i.hideClient):allItems;
+  items=allItems.filter(i=>!i.deleted&&(role!=="client"||!i.hideClient));
   const n=mine().length;
   const T=[["overview","Обзор"],["spec","Спецификация"],["viz","Визуализации"],["inbox","Мои задачи",n]];
   if(can("payments"))T.push(["payments","Счета и оплаты"]);
@@ -483,6 +483,7 @@ function spec(){
   const tot=list.reduce((s,i)=>s+sum(i),0);
   const canAdd=role==="kompl"&&!readOnly;
   const usedRooms=["Все",...allRooms().filter(r=>items.some(i=>i.room===r))];
+  if(!usedRooms.includes(room)){room="Все";return spec()}
   return `
   <div class="toolbar">
     <div class="chips">${usedRooms.map(r=>`<button class="chip" data-room="${esc(r)}" aria-pressed="${r===room}">${esc(r)}</button>`).join("")}</div>
@@ -511,7 +512,7 @@ function spec(){
     <thead><tr><th></th><th>Позиция</th><th>Помещение</th><th class="num">Кол-во</th><th class="num">Цена</th><th class="num">Сумма</th><th>Статус</th></tr></thead>
     <tbody>${list.map(i=>`<tr data-open="${i.id}"><td style="width:52px"><div class="sw" style="${swStyle(i)}"></div></td><td><div class="t">${esc(i.name)}</div><div class="sku">${esc(i.brand)} · ${esc(i.sku)}${i.sup?` · ${esc(i.sup)}`:""}</div></td><td>${role==="kompl"&&!readOnly?roomSelect("roomOf-"+i.id,i.room,` data-room-item="${i.id}"`):esc(i.room)}</td><td class="num money">${qtyText(i)}</td><td class="num money">${rub(unitPrice(i))}${role!=="client"&&+i.clientPrice?`<div class="sku">клиенту ${rub(i.clientPrice)}</div>`:""}</td><td class="num money">${rub(sum(i))}${+i.delivery?`<div class="sku">вкл. доставку ${rub(i.delivery)}</div>`:""}${role!=="client"&&+i.bureauPrice?`<div class="sku">бюро ${rub(bureauSum(i))}</div>`:""}</td><td>${pill(i.st)}${i.needClient?` <span class="m" title="Нужно согласие заказчика">· ☑ заказчик</span>`:""}${i.variants?.length>1?` <span class="m">· ${i.variants.length} вар.</span>`:""}${i.comments?.length?` <span class="m">· ${i.comments.length} комм.</span>`:""}</td></tr>`).join("")||`<tr><td colspan="7" class="empty">${items.length?"В этом помещении пока нет позиций":"Добавьте первую позицию кнопкой выше"}</td></tr>`}</tbody>
     <tfoot><tr><td></td><td colspan="4">Итого${room!=="Все"?" · "+esc(room):""}</td><td class="num money">${rub(tot)}</td><td></td></tr></tfoot>
-  </table></div>`}`;
+  </table></div>`}${role==="kompl"&&!readOnly&&allItems.some(i=>i.deleted)?`<details class="panel" style="margin-top:16px"><summary style="cursor:pointer;font-weight:600">Корзина · ${allItems.filter(i=>i.deleted).length}</summary><div class="list" style="margin-top:8px">${allItems.filter(i=>i.deleted).map(i=>`<div class="row"><div class="sw" style="${swStyle(i)}"></div><div class="grow"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.room)}</div></div><button class="btn" data-restore="${i.id}">Вернуть</button></div>`).join("")}</div></details>`:""}`;
 }
 function inbox(){
   const t=mine();
@@ -592,6 +593,8 @@ function render(){
 document.addEventListener("click",e=>{
   const vimg=e.target.closest(".vizimg.picking");
   if(vimg&&!e.target.closest(".pin")){const r=vimg.querySelector("img").getBoundingClientRect();pendingPin={vid:vimg.dataset.viz,x:+((e.clientX-r.left)/r.width*100).toFixed(2),y:+((e.clientY-r.top)/r.height*100).toFixed(2)};render();return}
+  const rb=e.target.closest("[data-restore]");
+  if(rb){const it=byId(rb.dataset.restore);delete it.deleted;save(it);toast("Позиция возвращена");render();return}
   const vb=e.target.closest("[data-pinmode],[data-delviz],[data-unpin],#pinSave,#pinCancel");
   if(vb){
     if(vb.dataset.pinmode){pinMode=pinMode===vb.dataset.pinmode?null:vb.dataset.pinmode;pendingPin=null}
@@ -605,9 +608,8 @@ document.addEventListener("click",e=>{
   if(!b)return;
   if(b.id==="delBtn"){
     if(!confirmDel){confirmDel=true;renderDrawer();return}
-    const id=openId;openId=null;confirmDel=false;allItems=allItems.filter(i=>i.id!==id);
-    removeItem(id);
-    toast("Позиция удалена");render();return;
+    const it=byId(openId);openId=null;confirmDel=false;it.deleted=Date.now();save(it);
+    toast("Позиция перенесена в корзину, её можно вернуть внизу спецификации");render();return;
   }
   confirmDel=false;
   if(b.id==="seedBtn"){seedExamples();return}
