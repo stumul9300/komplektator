@@ -181,6 +181,7 @@ td .roomsel{background:transparent}
 .tb b{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:currentColor;font-size:10px}
 .tb b{color:var(--surface)}
 .tb.g{color:var(--s-ok)}.tb.w{color:var(--s-des)}.tb.r{color:var(--s-bad)}.tb.n{color:var(--muted);opacity:.7}
+.alert{border:1px solid var(--s-bad);color:var(--fg);background:var(--sunk);border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .filebtn{position:relative;overflow:hidden}.filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer}
 .timeline .row .date{font-family:var(--f-mono);font-size:13px;width:92px;flex:none}
 @media (max-width:560px){.brand h1{font-size:20px}.big{font-size:26px}}
@@ -334,12 +335,23 @@ const SUPABASE_KEY="sb_publishable_PanbfKHCL3f1pCI9FrP8ig_rMrEKdNZ";
 const SEED=[{"created": 1792836000000, "room": "Гостиная", "name": "Диван модульный «Ривьера»", "brand": "Divan.ru", "sku": "RV-310-GR", "url": "", "qty": 1, "unit": "шт", "price": 189000, "sw": "#8A9488", "st": "ord", "needClient": false, "variants": [], "chosen": 0, "checklist": [{"t": "Запросить КП", "done": true}, {"t": "Получить счёт", "done": true}, {"t": "Оплатить", "done": true}, {"t": "Отгрузить", "done": false}, {"t": "Принять на объекте", "done": false}], "pay": {"status": "paid", "invoice": 189000, "paid": 189000}, "eta": "2026-11-14", "sup": "Divan.ru", "hideClient": false, "comments": [{"r": "designer", "t": "Ткань велюр, оттенок «шалфей», как на мудборде.", "d": "21 окт, 10:45"}], "id": "ex01"}, {"created": 1792836000001, "room": "Гостиная", "name": "Стол журнальный, дуб", "brand": "Woodi", "sku": "WD-CT-90", "url": "", "qty": 1, "unit": "шт", "price": 42500, "sw": "#B48A5A", "st": "ok", "needClient": false, "variants": [], "chosen": 0, "checklist": [{"t": "Запросить КП", "done": true}, {"t": "Получить счёт", "done": false}, {"t": "Оплатить", "done": false}, {"t": "Отгрузить", "done": false}, {"t": "Принять на объекте", "done": false}], "pay": {"status": "invoice", "invoice": 42500, "paid": 0}, "eta": "", "sup": "", "hideClient": false, "comments": [], "id": "ex02"}, {"created": 1792836000002, "room": "Гостиная", "name": "Светильник подвесной Arca", "brand": "Lightstar", "sku": "LS-805-31", "url": "", "qty": 2, "unit": "шт", "price": 18900, "sw": "#D8C9A3", "st": "cli", "needClient": true, "variants": [{"name": "Светильник подвесной Arca", "brand": "Lightstar", "sku": "LS-805-31", "price": 18900, "sw": "#D8C9A3", "url": ""}, {"name": "Светильник подвесной Globo, опал", "brand": "Maytoni", "sku": "MOD221-PL-01", "price": 14600, "sw": "#EFEDE6", "url": ""}, {"name": "Светильник Beat, латунь", "brand": "Tom Dixon", "sku": "BLS01-PEU", "price": 52000, "sw": "#B8923F", "url": ""}], "chosen": 0, "checklist": [], "pay": {"status": "none", "invoice": 0, "paid": 0}, "eta": "", "sup": "", "hideClient": false, "comments": [{"r": "kompl", "t": "Все три варианта есть в наличии в Москве, срок 5 дней.", "d": "21 окт, 10:45"}], "id": "ex03"}, {"created": 1792836000003, "room": "Кухня", "name": "Кухонный гарнитур, фасады эмаль", "brand": "Мария", "sku": "KG-ENML-4.2", "url": "", "qty": 1, "unit": "компл.", "price": 640000, "sw": "#E6E2D8", "st": "ok", "needClient": true, "variants": [], "chosen": 0, "checklist": [{"t": "Запросить КП", "done": true}, {"t": "Получить счёт", "done": true}, {"t": "Оплатить", "done": false}, {"t": "Отгрузить", "done": false}, {"t": "Принять на объекте", "done": false}], "pay": {"status": "partial", "invoice": 640000, "paid": 320000}, "eta": "", "sup": "", "hideClient": false, "comments": [], "id": "ex04"}, {"created": 1792836000004, "room": "Кухня", "name": "Стулья барные Frame", "brand": "Stool Group", "sku": "SG-FR-65", "url": "", "qty": 3, "unit": "шт", "price": 14200, "sw": "#3B3B3B", "st": "des", "needClient": true, "variants": [{"name": "Стулья барные Frame", "brand": "Stool Group", "sku": "SG-FR-65", "price": 14200, "sw": "#3B3B3B", "url": ""}, {"name": "Стулья барные Bonnie, букле", "brand": "Stool Group", "sku": "SG-BN-65", "price": 17900, "sw": "#E3DDD0", "url": ""}], "chosen": 0, "checklist": [], "pay": {"status": "none", "invoice": 0, "paid": 0}, "eta": "", "sup": "", "hideClient": false, "comments": [], "id": "ex05"}, {"created": 1792836000005, "room": "Кухня", "name": "Смеситель Grohe Essence", "brand": "Grohe", "sku": "30269000", "url": "", "qty": 1, "unit": "шт", "price": 37800, "sw": "#B9BDBF", "st": "del", "needClient": false, "variants": [], "chosen": 0, "checklist": [{"t": "Запросить КП", "done": true}, {"t": "Получить счёт", "done": true}, {"t": "Оплатить", "done": true}, {"t": "Отгрузить", "done": true}, {"t": "Принять на объекте", "done": true}], "pay": {"status": "paid", "invoice": 37800, "paid": 37800}, "eta": "2026-10-18", "sup": "Grohe", "hideClient": false, "comments": [], "id": "ex06"}, {"created": 1792836000006, "room": "Спальня", "name": "Кровать с мягким изголовьем 180×200", "brand": "Askona", "sku": "AS-MIL-180", "url": "", "qty": 1, "unit": "шт", "price": 96000, "sw": "#A6A08F", "st": "cli", "needClient": true, "variants": [{"name": "Кровать с мягким изголовьем 180×200", "brand": "Askona", "sku": "AS-MIL-180", "price": 96000, "sw": "#A6A08F", "url": ""}, {"name": "Кровать «Лофт» из массива дуба 180×200", "brand": "Woodi", "sku": "WD-BED-180", "price": 132000, "sw": "#B48A5A", "url": ""}], "chosen": 0, "checklist": [], "pay": {"status": "none", "invoice": 0, "paid": 0}, "eta": "", "sup": "", "hideClient": false, "comments": [], "id": "ex07"}, {"created": 1792836000007, "room": "Спальня", "name": "Шторы блэкаут, лён", "brand": "Ателье «Ткани»", "sku": "под заказ", "url": "", "qty": 2, "unit": "шт", "price": 28000, "sw": "#C9C1AE", "st": "pick", "needClient": true, "variants": [], "chosen": 0, "checklist": [], "pay": {"status": "none", "invoice": 0, "paid": 0}, "eta": "", "sup": "", "hideClient": false, "comments": [{"r": "designer", "t": "Нужен вариант на 2–3 тона темнее стены.", "d": "21 окт, 10:45"}], "id": "ex08"}, {"created": 1792836000008, "room": "Ванная", "name": "Керамогранит Kerama Marazzi «Ониче», 60×120", "brand": "Kerama Marazzi", "sku": "SG594402R", "url": "", "qty": 24, "unit": "м²", "price": 4900, "sw": "#EDEAE4", "st": "ord", "needClient": false, "variants": [], "chosen": 0, "checklist": [{"t": "Запросить КП", "done": true}, {"t": "Получить счёт", "done": true}, {"t": "Оплатить", "done": true}, {"t": "Отгрузить", "done": false}, {"t": "Принять на объекте", "done": false}], "pay": {"status": "paid", "invoice": 117600, "paid": 117600}, "eta": "2026-11-02", "sup": "Kerama Marazzi", "hideClient": false, "comments": [], "id": "ex09"}, {"created": 1792836000009, "room": "Ванная", "name": "Тумба с раковиной 80 см", "brand": "Am.Pm", "sku": "M90FHX0802", "url": "", "qty": 1, "unit": "шт", "price": 58300, "sw": "#7C6A58", "st": "des", "needClient": false, "variants": [], "chosen": 0, "checklist": [], "pay": {"status": "none", "invoice": 0, "paid": 0}, "eta": "", "sup": "", "hideClient": false, "comments": [], "id": "ex10"}, {"created": 1792836000010, "room": "Прихожая", "name": "Шкаф-купе встроенный", "brand": "Фабрика «Стенли»", "sku": "под замер", "url": "", "qty": 1, "unit": "шт", "price": 121000, "sw": "#D2CCC2", "st": "pick", "needClient": true, "variants": [], "chosen": 0, "checklist": [{"t": "Запросить КП", "done": false}, {"t": "Получить счёт", "done": false}, {"t": "Оплатить", "done": false}, {"t": "Отгрузить", "done": false}, {"t": "Принять на объекте", "done": false}], "pay": {"status": "none", "invoice": 0, "paid": 0}, "eta": "", "sup": "", "hideClient": false, "comments": [], "id": "ex11"}, {"created": 1792836000011, "room": "Прихожая", "name": "Зеркало в полный рост", "brand": "Evoform", "sku": "BY 0742", "url": "", "qty": 1, "unit": "шт", "price": 16400, "sw": "#C8D0D2", "st": "cli", "needClient": true, "variants": [{"name": "Зеркало в полный рост", "brand": "Evoform", "sku": "BY 0742", "price": 16400, "sw": "#C8D0D2", "url": ""}, {"name": "Зеркало в раме из латуни", "brand": "Bogacho", "sku": "BG-77015", "price": 34800, "sw": "#C9A86A", "url": ""}], "chosen": 0, "checklist": [], "pay": {"status": "none", "invoice": 0, "paid": 0}, "eta": "", "sup": "", "hideClient": false, "comments": [], "id": "ex12"}];
 const SEED_PROJECT={"name": "Пример: квартира на Петровской, 86 м²", "address": "Пример данных, можно удалить", "budget": 2400000, "vis": {"designer": {"prices": true, "checklist": true, "payments": false, "delivery": true}, "client": {"prices": true, "checklist": false, "payments": true, "delivery": true}}};
 let sb=null;
+// Защита от потери позиций: несохранённые позиции не пропадают при обновлении из базы,
+// ошибки сохранения видны постоянно, а в браузере хранится резервная копия списка.
+const unsaved=new Map();let saveErr="";
+function backupLocal(){try{localStorage.setItem("k-backup",JSON.stringify([...allItems,...lostItems].map(({img,imgCut,variants,...r})=>({...r,variants:(variants||[]).map(({img,...v})=>v)}))))}catch(e){}}
 async function save(it){
   if(!sb){render();return}
   const {id,...body}=it;
-  const {error}=await sb.from("items").upsert({id,data:body,created:body.created||Date.now()});
-  if(error)handleWriteError(error);
+  unsaved.set(id,it);
+  for(let attempt=0;attempt<3;attempt++){
+    const {error}=await sb.from("items").upsert({id,data:JSON.parse(JSON.stringify(body)),created:body.created||Date.now()});
+    if(!error){if(unsaved.get(id)===it)unsaved.delete(id);if(!unsaved.size&&saveErr){saveErr="";render()}backupLocal();return}
+    console.error("save",id,error);saveErr=`«${it.name}» не сохранилась: ${error.message||error.code||"ошибка сети"}`;
+    await new Promise(r=>setTimeout(r,800*(attempt+1)));
+  }
+  render();
 }
+function retryUnsaved(){[...unsaved.values()].forEach(save)}
 async function saveProject(){
   if(!sb){render();return}
   const {error}=await sb.from("project").upsert({id:"main",data:project});
@@ -351,13 +363,19 @@ function newId(){return "p"+Date.now().toString(36)+Math.random().toString(36).s
 async function loadAll(){
   const [a,b]=await Promise.all([sb.from("items").select("*").order("created"),sb.from("project").select("*")]);
   if(a.error){offline=true;loaded=true;toast("Нет связи с базой данных");render();return}
-  allItems=a.data.map(r=>({id:r.id,...r.data}));
+  const server=a.data.map(r=>({id:r.id,...r.data}));
+  // позиции, которые ещё сохраняются или не сохранились, оставляем в списке
+  for(const [id,it] of unsaved){const k=server.findIndex(x=>x.id===id);if(k<0)server.push(it);else server[k]=it}
+  allItems=server;
+  // сравнение с резервной копией этого браузера
+  try{const bk=JSON.parse(localStorage.getItem("k-backup")||"[]");lostItems=bk.filter(b=>!b.deleted&&!allItems.some(x=>x.id===b.id))}catch(e){lostItems=[]}
+  backupLocal();
   const rows=b.data||[];const main=rows.find(r=>r.id==="main");if(main)project={...project,...main.data};
   vizList=rows.filter(r=>r.id.startsWith("viz-")).map(r=>({id:r.id,...r.data})).sort((x,y)=>(x.created||0)-(y.created||0));
   colList=rows.filter(r=>r.id.startsWith("col-")).map(r=>({id:r.id,...r.data})).sort((x,y)=>(x.created||0)-(y.created||0));
   loaded=true;render();
 }
-let reloadT;
+let reloadT,lostItems=[];
 async function connect(){
   if(!SUPABASE_URL||!SUPABASE_KEY||!window.supabase){offline=true;loaded=true;render();return}
   sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
@@ -365,9 +383,10 @@ async function connect(){
   sb.channel("komplektator").on("postgres_changes",{event:"*",schema:"public"},()=>{clearTimeout(reloadT);reloadT=setTimeout(loadAll,300)}).subscribe();
 }
 async function seedExamples(){
-  allItems=structuredClone(SEED);project={...project,...SEED_PROJECT};render();
+  const have=new Set(allItems.map(i=>i.id)),add=structuredClone(SEED).filter(i=>!have.has(i.id));
+  allItems=[...allItems,...add];project={...SEED_PROJECT,...project};render();
   if(!sb)return;
-  const r1=await sb.from("items").upsert(SEED.map(({id,...d})=>({id,data:d,created:d.created})));
+  const r1=add.length?await sb.from("items").upsert(add.map(({id,...d})=>({id,data:d,created:d.created}))):{};
   const r2=await sb.from("project").upsert({id:"main",data:project});
   if(r1.error||r2.error)handleWriteError(r1.error||r2.error);else toast("Примеры добавлены");
 }
@@ -676,7 +695,8 @@ function render(){
   const focusId=document.activeElement?.id;
   const addOpen=$("#addForm")&&!$("#addForm").hidden;
   const formVals={};document.querySelectorAll("#main input,#main select").forEach(el=>{if(el.id&&el.type!=="file")formVals[el.id]=el.type==="checkbox"?el.checked:el.value});
-  $("#main").innerHTML=!loaded?`<div class="empty">Загружаю данные проекта…</div>`:(offline?`<p class="note warn">База данных не подключена: изменения пропадут после перезагрузки страницы.</p>`:"")+({overview,spec,inbox,delivery,payments,viz}[tab])();
+  const banner=(saveErr&&unsaved.size?`<div class="alert">${esc(saveErr)}. <button class="btn" id="retrySave">Сохранить ещё раз</button></div>`:"")+(role==="kompl"&&lostItems.length?`<div class="alert">В базе нет ${lostItems.length} поз., которые были в этом браузере: ${lostItems.map(i=>esc(i.name)).join(", ")}. <button class="btn" id="restoreLost">Вернуть</button> <button class="btn" id="dismissLost">Не нужно</button></div>`:"");
+  $("#main").innerHTML=banner+(!loaded?`<div class="empty">Загружаю данные проекта…</div>`:(offline?`<p class="note warn">База данных не подключена: изменения пропадут после перезагрузки страницы.</p>`:"")+({overview,spec,inbox,delivery,payments,viz}[tab])());
   if(addOpen&&$("#addForm"))$("#addForm").hidden=false;
   for(const[k,v]of Object.entries(formVals)){const el=document.getElementById(k);if(el&&$("#main").contains(el)){if(el.type==="checkbox")el.checked=v;else el.value=v}}
   renderDrawer();
@@ -705,6 +725,9 @@ document.addEventListener("click",e=>{
   if(e.target.id==="selAllPick"){items.filter(i=>i.st==="pick"&&(room==="Все"||i.room===room)).forEach(i=>selIds.add(i.id));render();return}
   if(e.target.id==="bulkPick"){bulkMove(items.filter(i=>i.st==="pick").map(i=>i.id),"des");return}
   if(e.target.id==="bulkDes"){const d=items.filter(i=>i.st==="des");d.forEach(i=>move(i.id,needC(i)?"cli":"ok",true));toast(`Согласовано: ${d.length} поз.`);render();return}
+  if(e.target.id==="dismissLost"){lostItems=[];backupLocal();render();return}
+  if(e.target.id==="retrySave"){retryUnsaved();toast("Сохраняю…");return}
+  if(e.target.id==="restoreLost"){const back=lostItems;lostItems=[];back.forEach(b=>{const it={...b};allItems.push(it);save(it)});toast("Возвращено позиций: "+back.length+" (фото нужно будет добавить заново)");render();return}
   const rb=e.target.closest("[data-restore]");
   if(rb){const it=byId(rb.dataset.restore);delete it.deleted;save(it);toast("Позиция возвращена");render();return}
   const vb=e.target.closest("[data-pinmode],[data-delviz],[data-unpin],#pinSave,#pinCancel");
