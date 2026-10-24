@@ -160,6 +160,17 @@ table.vis tbody tr{cursor:default}table.vis input{width:18px;height:18px;accent-
 .pinpick{display:flex;gap:8px;flex-wrap:wrap}.pinpick select{flex:1;min-width:0;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:8px 10px}
 .roomsel{border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:6px 8px;max-width:100%}
 td .roomsel{background:transparent}
+.stage{position:relative;width:100%;aspect-ratio:4/3;border-radius:10px;overflow:hidden;background-color:var(--sunk);touch-action:none;user-select:none}
+.stagehint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:14px;padding:16px;text-align:center}
+.layer{position:absolute;cursor:pointer}
+.stage.editable .layer{cursor:move}
+.layer img{display:block;width:100%;height:auto;pointer-events:none}
+.layer.sel{outline:2px dashed var(--accent);outline-offset:2px}
+.grip{position:absolute;right:-7px;bottom:-7px;width:14px;height:14px;border-radius:50%;background:var(--accent);border:2px solid #fff;cursor:nwse-resize;mix-blend-mode:normal}
+.pickgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px}
+.pick{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;padding:6px 8px;font-size:13px;flex-wrap:wrap}
+.pick.on{border-color:var(--accent)}
+.pick .sw{width:32px;height:32px}.pick .pn{flex:1;min-width:0;overflow-wrap:anywhere}
 .filebtn{position:relative;overflow:hidden}.filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer}
 .timeline .row .date{font-family:var(--f-mono);font-size:13px;width:92px;flex:none}
 @media (max-width:560px){.brand h1{font-size:20px}.big{font-size:26px}}
@@ -332,6 +343,7 @@ async function loadAll(){
   allItems=a.data.map(r=>({id:r.id,...r.data}));
   const rows=b.data||[];const main=rows.find(r=>r.id==="main");if(main)project={...project,...main.data};
   vizList=rows.filter(r=>r.id.startsWith("viz-")).map(r=>({id:r.id,...r.data})).sort((x,y)=>(x.created||0)-(y.created||0));
+  colList=rows.filter(r=>r.id.startsWith("col-")).map(r=>({id:r.id,...r.data})).sort((x,y)=>(x.created||0)-(y.created||0));
   loaded=true;render();
 }
 let reloadT;
@@ -434,7 +446,37 @@ function accessPanel(){
   ${VIS_FEATURES.map(([f,t])=>`<tr><td>${t}</td>${["designer","client"].map(r=>`<td><input type="checkbox" class="visbox" id="vis-${r}-${f}" data-vis="${r}:${f}" ${v[r]?.[f]?"checked":""} aria-label="${t}: ${ROLES[r].name}"></td>`).join("")}</tr>`).join("")}
   </tbody></table></div></details>`;
 }
-function viz(){
+// ---------- Сочетания: фон-плитка + товары поверх (коллаж) ----------
+let colList=[],colEdit=null,colSel=null,confirmCol=null;
+async function saveCol(c){if(!sb){render();return}const {id,...data}=c;const {error}=await sb.from("project").upsert({id,data});if(error)handleWriteError(error)}
+async function deleteCol(id){colList=colList.filter(c=>c.id!==id);render();if(!sb)return;const {error}=await sb.from("project").delete().eq("id",id);if(error)handleWriteError(error)}
+function colStage(c,editable){
+  const bg=byId(c.bgId);
+  const bgStyle=bg&&imgOk(bg.img)?`background-image:url(&quot;${cssUrl(bg.img)}&quot;);background-size:${c.tile||25}% auto;background-repeat:repeat`:"";
+  return `<div class="stage${editable?" editable":""}" data-stage="${c.id}" style="${bgStyle}">${bg?"":`<div class="stagehint">${editable?"Отметьте галкой плитку или обои и выберите их фоном":"Фон не выбран"}</div>`}
+  ${(c.layers||[]).map((l,k)=>{const it=byId(l.itemId);if(!it||!imgOk(it.img))return "";return `<div class="layer${editable&&colSel===k?" sel":""}" data-layer="${k}" ${editable?"":`data-open="${it.id}"`} style="left:${l.x}%;top:${l.y}%;width:${l.w}%;${l.blend?"mix-blend-mode:multiply;":""}" title="${esc(it.name)}"><img src="${esc(it.img)}" alt="${esc(it.name)}" draggable="false">${editable?`<span class="grip" data-grip="${k}"></span>`:""}</div>`}).join("")}</div>`;
+}
+function combos(){
+  const canEdit=!readOnly&&(role==="kompl"||role==="designer");
+  const withImg=items.filter(i=>imgOk(i.img));
+  let editor="";
+  if(canEdit&&colEdit){
+    const c=colEdit,picked=new Set([c.bgId,...(c.layers||[]).map(l=>l.itemId)].filter(Boolean));
+    const sl=colSel!=null&&c.layers[colSel];
+    editor=`<section class="panel vizcard"><div class="vizhead"><h2 style="margin:0">${c.created?"Изменить сочетание":"Новое сочетание"}</h2><div class="actions"><button class="btn pri" id="colSave">Сохранить</button><button class="btn" id="colCancel">Отмена</button></div></div>
+    <label class="field">Название<input id="colTitle" value="${esc(c.title||"")}" placeholder="Например, душ на керамограните"></label>
+    <p class="note" style="margin:0">Отметьте галками позиции. Одну выберите фоном (плитка, обои), остальные лягут поверх: их можно двигать мышкой и тянуть за уголок, чтобы изменить размер.</p>
+    <div class="pickgrid">${withImg.map(i=>`<label class="pick${picked.has(i.id)?" on":""}"><input type="checkbox" data-colpick="${i.id}" ${picked.has(i.id)?"checked":""}><span class="sw" style="${swStyle(i)}"></span><span class="pn">${esc(i.name)}</span>${picked.has(i.id)?`<button type="button" class="btn link" data-colbg="${i.id}">${c.bgId===i.id?"фон ✓":"сделать фоном"}</button>`:""}</label>`).join("")||`<div class="empty">Нет позиций с фото. Добавьте фото в карточках позиций.</div>`}</div>
+    ${c.bgId?`<label class="field">Размер плитки на картинке<input type="range" id="colTile" min="5" max="100" value="${c.tile||25}"></label>`:""}
+    ${colStage(c,true)}
+    ${sl?`<div class="actions"><span class="m" style="color:var(--muted)">Выбрано: ${esc(byId(sl.itemId)?.name||"")}</span><label class="check"><input type="checkbox" id="colBlend" ${sl.blend?"checked":""}> Убрать белый фон</label><button class="btn" id="colFront">На передний план</button></div>`:`<p class="m" style="color:var(--muted);margin:0">Нажмите на товар на картинке, чтобы убрать у него белый фон.</p>`}
+    </section>`;
+  }
+  const list=colList.map(c=>`<section class="panel vizcard"><div class="vizhead"><div><h2 style="margin:0">${esc(c.title||"Сочетание")}</h2><div class="m" style="color:var(--muted)">${[c.bgId,...(c.layers||[]).map(l=>l.itemId)].map(id=>byId(id)?.name).filter(Boolean).map(esc).join(" + ")}</div></div>${canEdit?`<div class="actions"><button class="btn" data-coledit="${c.id}">Изменить</button><button class="btn bad" data-coldel="${c.id}">${confirmCol===c.id?"Точно удалить?":"Удалить"}</button></div>`:""}</div>${colStage(c,false)}</section>`).join("");
+  return `<div class="vizhead" style="margin-bottom:12px"><h2 style="margin:0">Сочетания</h2>${canEdit&&!colEdit?`<button class="btn pri" id="colNew">Собрать сочетание</button>`:""}</div>${editor}${list||(colEdit?"":`<p class="note">${canEdit?"Соберите сочетание: например, керамогранит фоном и гигиенический душ поверх.":"Сочетаний пока нет."}</p>`)}`;
+}
+function viz(){return combos()+`<h2 style="margin:28px 0 12px">Визуализации с метками</h2>`+renders()}
+function renders(){
   const canEdit=!readOnly&&(role==="kompl"||role==="designer");
   const upload=canEdit?`<form class="add panel" id="vizForm"><label class="field">Название<input id="vzTitle" placeholder="Например, душевая зона" required></label><label class="field">Помещение<select id="vzRoom">${allRooms().map(r=>`<option>${esc(r)}</option>`).join("")}</select></label><div class="field">Картинка<span class="btn filebtn">Выбрать файл<input type="file" id="vzFile" accept="image/*"></span></div><div class="field" style="justify-content:flex-end"><button class="btn pri" type="submit" id="vzSubmit" disabled>Добавить визуализацию</button></div></form>`:"";
   if(!vizList.length)return upload+`<div class="panel empty-state"><h2>Визуализаций пока нет</h2><p class="note">${canEdit?"Загрузите рендер помещения, затем нажмите «Поставить метку» и кликните по нужному месту на картинке, например по плитке в душе. Заказчик сможет нажать на метку и увидеть позицию.":"Когда дизайнер или комплектатор загрузит визуализации, они появятся здесь."}</p></div>`;
@@ -593,6 +635,18 @@ function render(){
 document.addEventListener("click",e=>{
   const vimg=e.target.closest(".vizimg.picking");
   if(vimg&&!e.target.closest(".pin")){const r=vimg.querySelector("img").getBoundingClientRect();pendingPin={vid:vimg.dataset.viz,x:+((e.clientX-r.left)/r.width*100).toFixed(2),y:+((e.clientY-r.top)/r.height*100).toFixed(2)};render();return}
+  const cb=e.target.closest("#colNew,#colSave,#colCancel,#colFront,[data-colbg],[data-coledit],[data-coldel]");
+  if(cb){
+    if(cb.id==="colNew"){colEdit={id:"col-"+newId(),title:"",bgId:"",tile:25,layers:[]};colSel=null}
+    else if(cb.id==="colCancel"){colEdit=null;colSel=null}
+    else if(cb.id==="colSave"){const c=colEdit;c.title=$("#colTitle").value.trim()||"Сочетание";const isNew=!c.created;if(isNew)c.created=Date.now();colList=[...colList.filter(x=>x.id!==c.id),c];colEdit=null;colSel=null;saveCol(c);toast("Сочетание сохранено")}
+    else if(cb.id==="colFront"&&colSel!=null){const l=colEdit.layers.splice(colSel,1)[0];colEdit.layers.push(l);colSel=colEdit.layers.length-1}
+    else if(cb.dataset.colbg){e.preventDefault();const id=cb.dataset.colbg;colEdit.layers=colEdit.layers.filter(l=>l.itemId!==id);if(colEdit.bgId&&colEdit.bgId!==id)colEdit.layers.push({itemId:colEdit.bgId,x:30,y:30,w:30,blend:true});colEdit.bgId=id;colSel=null}
+    else if(cb.dataset.coledit){colEdit=structuredClone(colList.find(c=>c.id===cb.dataset.coledit));colSel=null;window.scrollTo({top:0})}
+    else if(cb.dataset.coldel){if(confirmCol===cb.dataset.coldel){confirmCol=null;deleteCol(cb.dataset.coldel);toast("Сочетание удалено");return}confirmCol=cb.dataset.coldel}
+    if(colEdit)colEdit.title=$("#colTitle")?.value??colEdit.title;
+    render();return;
+  }
   const rb=e.target.closest("[data-restore]");
   if(rb){const it=byId(rb.dataset.restore);delete it.deleted;save(it);toast("Позиция возвращена");render();return}
   const vb=e.target.closest("[data-pinmode],[data-delviz],[data-unpin],#pinSave,#pinCancel");
@@ -632,6 +686,22 @@ function updatePackCalc(){
   const t={unit:u,area:+$("#fQty").value||0,perPack:+$("#fPack").value||0};const n=packs(t);const c=$("#fPackCalc");
   c.hidden=!n;if(n){recalc(t);const pr=+$("#fPrice").value||0;c.innerHTML=`Расчёт<b style="color:var(--fg)">${n} уп. = ${fmtN(t.qty)} ${u}${pr?" · "+fmtRub(pr*t.qty):""}</b>`}
 }
+// Перетаскивание и масштаб товаров в редакторе сочетаний
+let drag=null;
+document.addEventListener("pointerdown",e=>{
+  const st=e.target.closest(".stage.editable");if(!st||!colEdit)return;
+  const grip=e.target.closest("[data-grip]"),ly=e.target.closest("[data-layer]");if(!ly)return;
+  e.preventDefault();const k=+ly.dataset.layer,l=colEdit.layers[k],r=st.getBoundingClientRect();
+  if(colSel!==k){colSel=k;colEdit.title=$("#colTitle").value;render();}
+  const el=document.querySelector(`.stage.editable [data-layer="${k}"]`);
+  drag={k,el,r,mode:grip?"size":"move",sx:e.clientX,sy:e.clientY,ox:l.x,oy:l.y,ow:l.w};
+});
+document.addEventListener("pointermove",e=>{
+  if(!drag)return;const l=colEdit.layers[drag.k],dx=(e.clientX-drag.sx)/drag.r.width*100,dy=(e.clientY-drag.sy)/drag.r.height*100;
+  if(drag.mode==="move"){l.x=+(drag.ox+dx).toFixed(2);l.y=+(drag.oy+dy).toFixed(2);drag.el.style.left=l.x+"%";drag.el.style.top=l.y+"%"}
+  else{l.w=Math.max(4,Math.min(150,+(drag.ow+dx).toFixed(2)));drag.el.style.width=l.w+"%"}
+});
+document.addEventListener("pointerup",()=>{drag=null});
 // Вставка фото: скопируйте картинку на сайте магазина и нажмите Ctrl+V
 document.addEventListener("paste",e=>{
   if(role!=="kompl"||readOnly)return;
@@ -645,9 +715,15 @@ document.addEventListener("paste",e=>{
   const tag=e.target.tagName;
   if(/^https?:\/\/\S+\.(jpe?g|png|webp|gif|avif)(\?\S*)?$/i.test(text)&&!(tag==="INPUT"&&e.target.id!=="itemImgUrl")){e.preventDefault();apply(text)}
 });
-document.addEventListener("input",e=>{if(["fQty","fPack","fPrice"].includes(e.target.id))updatePackCalc()});
+document.addEventListener("input",e=>{
+  if(e.target.id==="colTile"&&colEdit){colEdit.tile=+e.target.value;const st=document.querySelector('.stage.editable');if(st)st.style.backgroundSize=colEdit.tile+"% auto"}if(["fQty","fPack","fPrice"].includes(e.target.id))updatePackCalc()});
 let vizPending="";
 document.addEventListener("change",e=>{
+  if(e.target.dataset.colpick&&colEdit){const id=e.target.dataset.colpick,c=colEdit;c.title=$("#colTitle").value;
+    if(e.target.checked){if(!c.bgId&&isArea(byId(id)?.unit))c.bgId=id;else c.layers.push({itemId:id,x:35,y:30,w:30,blend:true})}
+    else{if(c.bgId===id)c.bgId="";c.layers=c.layers.filter(l=>l.itemId!==id);colSel=null}
+    render()}
+  if(e.target.id==="colBlend"&&colEdit&&colSel!=null){colEdit.layers[colSel].blend=e.target.checked;colEdit.title=$("#colTitle").value;render()}
   if(e.target.id==="fRoom"){const n=$("#fRoomNew");n.hidden=e.target.value!=="__new";n.required=!n.hidden;if(!n.hidden)n.focus()}
   if(e.target.id==="itemRoom"){const n=$("#itemRoomNew");if(e.target.value==="__new"){n.hidden=false;n.focus()}else{const it=byId(openId);it.room=e.target.value;save(it);toast("Помещение: "+it.room);render()}}
   if(e.target.id==="itemRoomNew"){const nm=addRoom(e.target.value);if(nm){const it=byId(openId);it.room=nm;save(it);toast("Помещение: "+nm);render()}}
