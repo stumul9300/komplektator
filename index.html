@@ -158,6 +158,8 @@ table.vis tbody tr{cursor:default}table.vis input{width:18px;height:18px;accent-
 .pin.pending{background:var(--brass);pointer-events:none}
 .pin.static{position:static;transform:none;flex:none;box-shadow:none}
 .pinpick{display:flex;gap:8px;flex-wrap:wrap}.pinpick select{flex:1;min-width:0;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:8px 10px}
+.roomsel{border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:6px 8px;max-width:100%}
+td .roomsel{background:transparent}
 .filebtn{position:relative;overflow:hidden}.filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer}
 .timeline .row .date{font-family:var(--f-mono);font-size:13px;width:92px;flex:none}
 @media (max-width:560px){.brand h1{font-size:20px}.big{font-size:26px}}
@@ -197,7 +199,11 @@ const ST={
   del:{t:"Доставлено",c:"--s-del",owner:null}
 };
 const FLOW=["pick","des","cli","ok","ord","del"];
-const ROOMS=["Гостиная","Кухня","Спальня","Ванная","Прихожая","Детская","Кабинет"];
+const ROOMS=["Гостиная","Кухня","Спальня","Ванная","Санузел","Прихожая","Детская","Кабинет","Гардеробная","Балкон"];
+const allRooms=()=>[...new Set([...ROOMS,...(project.rooms||[]),...allItems.map(i=>i.room).filter(Boolean)])];
+// Выпадающий список помещений с пунктом «Другое…» для нового помещения
+const roomSelect=(id,cur,extra="")=>`<select id="${id}" class="roomsel"${extra}>${cur?"":`<option value="" selected disabled>— выберите —</option>`}${allRooms().map(r=>`<option${r===cur?" selected":""}>${esc(r)}</option>`).join("")}<option value="__new">＋ Другое помещение…</option></select>`;
+function addRoom(name){name=(name||"").trim();if(!name)return "";if(!allRooms().includes(name)){project.rooms=[...(project.rooms||[]),name];saveProject()}return name}
 const SWATCH=["#A8B5A2","#C4B49A","#8E9AA6","#B79C86","#D9D4CA","#7C6A58","#C8D0D2"];
 
 let role=(()=>{const h=location.hash.slice(1);if(ROLES[h])return h;try{const r=localStorage.getItem("k-role");if(ROLES[r])return r}catch(e){}return"kompl"})();
@@ -430,7 +436,7 @@ function accessPanel(){
 }
 function viz(){
   const canEdit=!readOnly&&(role==="kompl"||role==="designer");
-  const upload=canEdit?`<form class="add panel" id="vizForm"><label class="field">Название<input id="vzTitle" placeholder="Например, душевая зона" required></label><label class="field">Помещение<select id="vzRoom">${ROOMS.map(r=>`<option>${r}</option>`).join("")}</select></label><div class="field">Картинка<span class="btn filebtn">Выбрать файл<input type="file" id="vzFile" accept="image/*"></span></div><div class="field" style="justify-content:flex-end"><button class="btn pri" type="submit" id="vzSubmit" disabled>Добавить визуализацию</button></div></form>`:"";
+  const upload=canEdit?`<form class="add panel" id="vizForm"><label class="field">Название<input id="vzTitle" placeholder="Например, душевая зона" required></label><label class="field">Помещение<select id="vzRoom">${allRooms().map(r=>`<option>${esc(r)}</option>`).join("")}</select></label><div class="field">Картинка<span class="btn filebtn">Выбрать файл<input type="file" id="vzFile" accept="image/*"></span></div><div class="field" style="justify-content:flex-end"><button class="btn pri" type="submit" id="vzSubmit" disabled>Добавить визуализацию</button></div></form>`:"";
   if(!vizList.length)return upload+`<div class="panel empty-state"><h2>Визуализаций пока нет</h2><p class="note">${canEdit?"Загрузите рендер помещения, затем нажмите «Поставить метку» и кликните по нужному месту на картинке, например по плитке в душе. Заказчик сможет нажать на метку и увидеть позицию.":"Когда дизайнер или комплектатор загрузит визуализации, они появятся здесь."}</p></div>`;
   return upload+vizList.map(v=>{
     const pins=(v.pins||[]).map((p,k)=>({...p,k,it:items.find(i=>i.id===p.itemId)})).filter(p=>p.it);
@@ -476,7 +482,7 @@ function spec(){
   const list=items.filter(i=>room==="Все"||i.room===room);
   const tot=list.reduce((s,i)=>s+sum(i),0);
   const canAdd=role==="kompl"&&!readOnly;
-  const usedRooms=["Все",...ROOMS.filter(r=>items.some(i=>i.room===r)),...[...new Set(items.map(i=>i.room))].filter(r=>!ROOMS.includes(r))];
+  const usedRooms=["Все",...allRooms().filter(r=>items.some(i=>i.room===r))];
   return `
   <div class="toolbar">
     <div class="chips">${usedRooms.map(r=>`<button class="chip" data-room="${esc(r)}" aria-pressed="${r===room}">${esc(r)}</button>`).join("")}</div>
@@ -484,7 +490,7 @@ function spec(){
   </div>
   ${canAdd?`<form class="add panel" id="addForm" ${items.length?"hidden":""}>
     <label class="field">Наименование<input id="fName" required placeholder="Например, кресло Lounge"></label>
-    <label class="field">Помещение<select id="fRoom">${ROOMS.map(r=>`<option${r===room?" selected":""}>${r}</option>`).join("")}</select></label>
+    <label class="field">Помещение${roomSelect("fRoom",room!=="Все"?room:""," required")}<input id="fRoomNew" placeholder="Название помещения" hidden></label>
     <label class="field">Бренд<input id="fBrand" placeholder="Производитель"></label>
     <label class="field">Артикул<input id="fSku" placeholder="Артикул поставщика"></label>
     <label class="field">Поставщик<input id="fSup" placeholder="подставится по ссылке"></label>
@@ -503,7 +509,7 @@ function spec(){
   </form>`:""}
   ${!items.length&&!canAdd?emptyAll():`<div class="tablebox"><table>
     <thead><tr><th></th><th>Позиция</th><th>Помещение</th><th class="num">Кол-во</th><th class="num">Цена</th><th class="num">Сумма</th><th>Статус</th></tr></thead>
-    <tbody>${list.map(i=>`<tr data-open="${i.id}"><td style="width:52px"><div class="sw" style="${swStyle(i)}"></div></td><td><div class="t">${esc(i.name)}</div><div class="sku">${esc(i.brand)} · ${esc(i.sku)}${i.sup?` · ${esc(i.sup)}`:""}</div></td><td>${esc(i.room)}</td><td class="num money">${qtyText(i)}</td><td class="num money">${rub(unitPrice(i))}${role!=="client"&&+i.clientPrice?`<div class="sku">клиенту ${rub(i.clientPrice)}</div>`:""}</td><td class="num money">${rub(sum(i))}${+i.delivery?`<div class="sku">вкл. доставку ${rub(i.delivery)}</div>`:""}${role!=="client"&&+i.bureauPrice?`<div class="sku">бюро ${rub(bureauSum(i))}</div>`:""}</td><td>${pill(i.st)}${i.needClient?` <span class="m" title="Нужно согласие заказчика">· ☑ заказчик</span>`:""}${i.variants?.length>1?` <span class="m">· ${i.variants.length} вар.</span>`:""}${i.comments?.length?` <span class="m">· ${i.comments.length} комм.</span>`:""}</td></tr>`).join("")||`<tr><td colspan="7" class="empty">${items.length?"В этом помещении пока нет позиций":"Добавьте первую позицию кнопкой выше"}</td></tr>`}</tbody>
+    <tbody>${list.map(i=>`<tr data-open="${i.id}"><td style="width:52px"><div class="sw" style="${swStyle(i)}"></div></td><td><div class="t">${esc(i.name)}</div><div class="sku">${esc(i.brand)} · ${esc(i.sku)}${i.sup?` · ${esc(i.sup)}`:""}</div></td><td>${role==="kompl"&&!readOnly?roomSelect("roomOf-"+i.id,i.room,` data-room-item="${i.id}"`):esc(i.room)}</td><td class="num money">${qtyText(i)}</td><td class="num money">${rub(unitPrice(i))}${role!=="client"&&+i.clientPrice?`<div class="sku">клиенту ${rub(i.clientPrice)}</div>`:""}</td><td class="num money">${rub(sum(i))}${+i.delivery?`<div class="sku">вкл. доставку ${rub(i.delivery)}</div>`:""}${role!=="client"&&+i.bureauPrice?`<div class="sku">бюро ${rub(bureauSum(i))}</div>`:""}</td><td>${pill(i.st)}${i.needClient?` <span class="m" title="Нужно согласие заказчика">· ☑ заказчик</span>`:""}${i.variants?.length>1?` <span class="m">· ${i.variants.length} вар.</span>`:""}${i.comments?.length?` <span class="m">· ${i.comments.length} комм.</span>`:""}</td></tr>`).join("")||`<tr><td colspan="7" class="empty">${items.length?"В этом помещении пока нет позиций":"Добавьте первую позицию кнопкой выше"}</td></tr>`}</tbody>
     <tfoot><tr><td></td><td colspan="4">Итого${room!=="Все"?" · "+esc(room):""}</td><td class="num money">${rub(tot)}</td><td></td></tr></tfoot>
   </table></div>`}`;
 }
@@ -552,7 +558,7 @@ function renderDrawer(){
   d.innerHTML=`<div class="dh">${!readOnly&&role==="kompl"?`<label class="sw swup" style="${swStyle(i)}" title="Загрузить фото (или Ctrl+V)"><input type="file" id="imgFileHead" accept="image/*" aria-label="Загрузить фото">${imgOk(i.img)?`<span class="swhint">заменить</span>`:`<span class="swplus">＋<br>фото</span>`}</label>`:`<div class="sw" style="${swStyle(i)}"></div>`}<div style="min-width:0"><h2>${esc(i.name)}</h2>${pill(i.st)}</div><button class="close" id="close" aria-label="Закрыть">×</button></div>
   <div class="db">
     ${photoTop}
-    <dl><dt>Помещение</dt><dd>${esc(i.room)}</dd><dt>Бренд</dt><dd>${esc(i.brand)}</dd><dt>Артикул</dt><dd class="sku">${esc(i.sku)}</dd>${i.sup?`<dt>Поставщик</dt><dd>${esc(i.sup)}</dd>`:""}<dt>Количество</dt><dd class="money">${qtyText(i)}</dd><dt>Цена</dt><dd class="money">${rub(unitPrice(i))}</dd>${role!=="client"&&+i.clientPrice?`<dt>Для клиента</dt><dd class="money">${rub(i.clientPrice)}</dd>`:""}${+i.delivery?`<dt>Доставка</dt><dd class="money">${rub(i.delivery)}</dd>`:""}<dt>Сумма</dt><dd class="money"><b>${rub(sum(i))}</b></dd>${role!=="client"&&+i.bureauPrice?`<dt>Цена для бюро</dt><dd class="money">${rub(i.bureauPrice)} за ед. · итого ${rub(bureauSum(i))}</dd>`:""}${(i.st==="ord"||i.st==="del")&&can("delivery")?`<dt>Поставка</dt><dd>${fmtDate(i.eta)} · ${esc(i.sup||i.brand)}</dd>`:""}${link?`<dt>Ссылка</dt><dd><a href="${esc(link)}" target="_blank" rel="noopener">Открыть товар ↗</a></dd>`:""}</dl>
+    <dl><dt>Помещение</dt><dd>${!readOnly&&(role==="kompl"||role==="designer")?`${roomSelect("itemRoom",i.room)}<input id="itemRoomNew" placeholder="Название и Enter" hidden style="margin-top:6px">`:esc(i.room)}</dd><dt>Бренд</dt><dd>${esc(i.brand)}</dd><dt>Артикул</dt><dd class="sku">${esc(i.sku)}</dd>${i.sup?`<dt>Поставщик</dt><dd>${esc(i.sup)}</dd>`:""}<dt>Количество</dt><dd class="money">${qtyText(i)}</dd><dt>Цена</dt><dd class="money">${rub(unitPrice(i))}</dd>${role!=="client"&&+i.clientPrice?`<dt>Для клиента</dt><dd class="money">${rub(i.clientPrice)}</dd>`:""}${+i.delivery?`<dt>Доставка</dt><dd class="money">${rub(i.delivery)}</dd>`:""}<dt>Сумма</dt><dd class="money"><b>${rub(sum(i))}</b></dd>${role!=="client"&&+i.bureauPrice?`<dt>Цена для бюро</dt><dd class="money">${rub(i.bureauPrice)} за ед. · итого ${rub(bureauSum(i))}</dd>`:""}${(i.st==="ord"||i.st==="del")&&can("delivery")?`<dt>Поставка</dt><dd>${fmtDate(i.eta)} · ${esc(i.sup||i.brand)}</dd>`:""}${link?`<dt>Ссылка</dt><dd><a href="${esc(link)}" target="_blank" rel="noopener">Открыть товар ↗</a></dd>`:""}</dl>
     ${photoEdit}
     ${tick}
     ${hide}
@@ -607,6 +613,7 @@ document.addEventListener("click",e=>{
   if(b.id==="seedBtn"){seedExamples();return}
   if(b.id==="imgDel"){const it=byId(openId);it.img="";save(it);render();return}
   if(b.id==="imgFetch"){const it=byId(openId);toast("Ищу фото и цену на странице товара…");fetchPreview(it.url).then(r=>{const got=[];if(r.img){it.img=r.img;got.push("фото")}if(r.price){it.price=r.price;got.push("цена")}if(got.length){save(it);toast("Обновлено: "+got.join(" и "));render()}else toast("Не получилось найти фото и цену. Укажите их вручную.")});return}
+  if(b.dataset.open&&e.target.closest("select,input"))return;
   if(b.dataset.var){const[id,k]=b.dataset.var.split(":");choose(byId(id),+k)}
   else if(b.dataset.role){role=b.dataset.role;try{localStorage.setItem("k-role",role)}catch(_){}toast("Вы смотрите как "+ROLES[role].name.toLowerCase());render()}
   else if(b.dataset.tab){tab=b.dataset.tab;render()}
@@ -639,6 +646,10 @@ document.addEventListener("paste",e=>{
 document.addEventListener("input",e=>{if(["fQty","fPack","fPrice"].includes(e.target.id))updatePackCalc()});
 let vizPending="";
 document.addEventListener("change",e=>{
+  if(e.target.id==="fRoom"){const n=$("#fRoomNew");n.hidden=e.target.value!=="__new";n.required=!n.hidden;if(!n.hidden)n.focus()}
+  if(e.target.id==="itemRoom"){const n=$("#itemRoomNew");if(e.target.value==="__new"){n.hidden=false;n.focus()}else{const it=byId(openId);it.room=e.target.value;save(it);toast("Помещение: "+it.room);render()}}
+  if(e.target.id==="itemRoomNew"){const nm=addRoom(e.target.value);if(nm){const it=byId(openId);it.room=nm;save(it);toast("Помещение: "+nm);render()}}
+  if(e.target.dataset.roomItem){const it=byId(e.target.dataset.roomItem);if(e.target.value==="__new"){openId=it.id;render();setTimeout(()=>{const sel=$("#itemRoom");if(sel){sel.value="__new";$("#itemRoomNew").hidden=false;$("#itemRoomNew").focus()}},0)}else{it.room=e.target.value;save(it);toast("Помещение: "+it.room);render()}}
   if(e.target.id==="vzFile"&&e.target.files[0]){fileToDataUrl(e.target.files[0],1600).then(d=>{vizPending=d;const b=$("#vzSubmit");if(b)b.disabled=false;toast("Картинка готова, нажмите «Добавить визуализацию»")})}
   if(e.target.id==="fUrl"){const u=e.target.value.trim();if(!u)return;if($("#fSup")&&!$("#fSup").value)$("#fSup").value=shopName(u);$("#fPrev").textContent="ищу фото…";fetchPreview(u).then(r=>{if(r.img){pendingImg=r.img;const el=$("#fPrev");if(el){setPrev(el,r.img)}}else if($("#fPrev"))$("#fPrev").textContent="фото не найдено";if(r.title&&$("#fName")&&!$("#fName").value)$("#fName").value=r.title.slice(0,120);if(r.price&&$("#fPrice")&&!$("#fPrice").value){$("#fPrice").value=r.price;toast("Цена подставлена со страницы товара")}})}
   if(e.target.id==="itemImgUrl"){const v=e.target.value.trim();if(/^https?:\/\//i.test(v)){const it=byId(openId);imageLoads(v).then(ok=>{if(ok){it.img=v;save(it);toast("Фото добавлено");render()}else toast("По этой ссылке картинка не открывается")})}}
@@ -680,7 +691,7 @@ document.addEventListener("submit",e=>{
     toast("Данные проекта сохранены");saveProject();render();
   }
   if(id==="addForm"){
-    const it={id:newId(),created:Date.now(),room:$("#fRoom").value,name:$("#fName").value.trim(),brand:$("#fBrand").value.trim()||"—",sku:$("#fSku").value.trim()||"—",sup:$("#fSup").value.trim()||shopName($("#fUrl").value.trim()),url:$("#fUrl").value.trim(),img:pendingImg,qty:Math.max(0,+$("#fQty").value||1),unit:$("#fUnit").value,area:isArea($("#fUnit").value)?+$("#fQty").value||0:0,perPack:isArea($("#fUnit").value)?+$("#fPack").value||0:0,price:+$("#fPrice").value||0,clientPrice:+$("#fCPrice").value||0,bureauPrice:+$("#fBPrice").value||0,delivery:+$("#fDeliv").value||0,sw:SWATCH[items.length%SWATCH.length],st:"pick",comments:[],needClient:$("#fNeed").checked,variants:[],chosen:0,checklist:[],pay:{status:"none",invoice:0,paid:0}};
+    const it={id:newId(),created:Date.now(),room:$("#fRoom").value==="__new"?addRoom($("#fRoomNew").value):$("#fRoom").value,name:$("#fName").value.trim(),brand:$("#fBrand").value.trim()||"—",sku:$("#fSku").value.trim()||"—",sup:$("#fSup").value.trim()||shopName($("#fUrl").value.trim()),url:$("#fUrl").value.trim(),img:pendingImg,qty:Math.max(0,+$("#fQty").value||1),unit:$("#fUnit").value,area:isArea($("#fUnit").value)?+$("#fQty").value||0:0,perPack:isArea($("#fUnit").value)?+$("#fPack").value||0:0,price:+$("#fPrice").value||0,clientPrice:+$("#fCPrice").value||0,bureauPrice:+$("#fBPrice").value||0,delivery:+$("#fDeliv").value||0,sw:SWATCH[items.length%SWATCH.length],st:"pick",comments:[],needClient:$("#fNeed").checked,variants:[],chosen:0,checklist:[],pay:{status:"none",invoice:0,paid:0}};
     recalc(it);allItems.push(it);pendingImg="";e.target.reset();
     if((!it.img||!it.price)&&it.url)fetchPreview(it.url).then(r=>{let ch=false;if(r.img&&!it.img){it.img=r.img;ch=true}if(r.price&&!it.price){it.price=r.price;ch=true}if(ch){save(it);render()}});e.target.hidden=true;
     toast("Позиция добавлена в подбор");save(it);render();
