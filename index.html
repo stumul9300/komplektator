@@ -241,6 +241,12 @@ table.spec td.num,table.spec th.num{overflow-wrap:normal;white-space:nowrap}
 .mic{flex:none;width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--bg);color:var(--fg);cursor:pointer;font-size:16px;line-height:1;display:inline-flex;align-items:center;justify-content:center;padding:0}
 .mic.off{opacity:.45}.mic.rec{background:#c0392b;border-color:#c0392b;color:#fff;animation:micp 1.2s infinite}
 @keyframes micp{0%{box-shadow:0 0 0 0 rgba(192,57,43,.5)}70%{box-shadow:0 0 0 8px rgba(192,57,43,0)}100%{box-shadow:0 0 0 0 rgba(192,57,43,0)}}
+.kboard{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;align-items:start}
+@media (max-width:1000px){.kboard{grid-template-columns:repeat(2,minmax(0,1fr))}}@media (max-width:600px){.kboard{grid-template-columns:1fr}}
+.kcol{min-height:140px;padding:12px}.kcol h3{margin:0 0 8px}.kcol.drop{outline:2px dashed var(--accent);outline-offset:-4px}.kprob h3{color:var(--s-bad)}.kdel h3{color:var(--accent)}
+.kcards{display:flex;flex-direction:column;gap:8px}.kcard{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--bg);cursor:pointer;font-size:13px}.kcard[draggable=true]{cursor:grab}.kcard.dragging{opacity:.4}
+.kcard.over{border-color:var(--s-bad);box-shadow:inset 3px 0 0 var(--s-bad)}.kcard .kt{display:flex;gap:6px;align-items:center}.kcard .kt .sw{width:14px;height:14px;flex:none;border-radius:3px}.kcard .m{margin-top:2px}
+.kmv{margin-top:6px;width:100%;border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:6px;padding:4px 6px;font-size:12px}
 </style>
 </head>
 <body>
@@ -304,7 +310,7 @@ const paidNet=i=>{const L=payList(i);return L.length?L.reduce((s,x)=>s+(x.type==
 const orderCost=i=>+payOf(i).invoice||sum(i);
 const payLeft=i=>orderCost(i)-paidNet(i);
 function payStatusAuto(i){const n=paidNet(i),c=orderCost(i);return n>0&&n>=c?"paid":n>0?"partial":+payOf(i).invoice?"invoice":"none"}
-const SHIP={ordered:"Заказано",transit:"В пути",problem:"Проблема"};
+const SHIP={ordered:"Заказано",transit:"В пути",stock:"На складе",problem:"Проблема"};
 const shipOf=i=>i.st==="del"?"Доставлено":["ord"].includes(i.st)?SHIP[i.ship||"ordered"]:"Не заказано";
 const CHECK_TEMPLATE=["Запросить КП","Получить счёт","Оплатить","Отгрузить","Принять на объекте"];
 let allItems=[],items=[],project={name:"Новый проект",budget:0,address:"",vis:VIS_DEFAULT};
@@ -871,6 +877,7 @@ const PRICE_F=new Set(["price","clientPrice","bureauPrice","delivery","pay"]);
 function fmtVal(k,v){
   if(v==null||v==="")return "—";
   if(k==="st")return ST[v]?.t||v;
+  if(k==="ship")return SHIP[v]||v;
   if(PRICE_F.has(k)&&typeof v==="number")return can("prices")?fmtRub(v):"—";
   if(k==="pay"&&typeof v==="object")return can("prices")?`${PAY[v.status]||""}${(v.list||[]).length?`, платежей ${(v.list||[]).length}`:""}${v.paid?`, оплачено ${fmtRub(v.paid)}`:""}`:"изменена";
   if(typeof v==="boolean")return v?"да":"нет";
@@ -1037,7 +1044,7 @@ const SCN={
       {sel:"[data-tab=inbox]",tab:"inbox",t:"Утверждённые позиции появляются в «Моих задачах» с кнопкой «Оформить заказ»."},
       {sel:"#shipSel",tab:"spec",open:true,prep:()=>{const i=items.find(x=>x.st==="ord");if(i){openId=i.id;render()}},miss:"Блок «Поставка» появится у заказанной позиции.",t:"У заказанной позиции: статус (заказано, в пути, проблема), плановая и фактическая дата. Когда привезли — «Отметить доставку». Если плановая дата прошла, а поставка не закрыта — позиция помечается как просроченная."},
       {sel:"#replaceAfter",tab:"spec",miss:"Кнопка есть у заказанной позиции.",t:"«Замена после заказа» создаёт новую позицию-замену. Исходная остаётся со своей историей и оплатами, с отметкой «Проблема»."},
-      {sel:"[data-tab=delivery]",tab:"delivery",t:"Вкладка «Поставки»: просроченные, проблемные, ожидаемые и доставленные."}]},
+      {sel:"[data-tab=delivery]",tab:"delivery",t:"Вкладка «Поставки» — доска по статусам. Перетащите карточку в «Доставлено на объект» (или выберите статус в списке на карточке), дата доставки поставится сама. Просроченные отмечены красным."}]},
     {id:"checklist",title:"Чек-лист и обсуждение позиции",steps:[
       {sel:"#clTpl,#clText",tab:"spec",open:true,t:"Чек-лист в карточке: добавьте свои пункты или типовые — КП, счёт, оплата, отгрузка. Отмечайте галками по ходу."},
       {sel:"#cText",tab:"spec",open:true,t:"Обсуждение: комментарии видят все участники, с именем роли и временем."}]},
@@ -1371,13 +1378,21 @@ function inbox(){
   <div class="panel"><div class="list">${t.length?t.map(i=>`<div class="row">${canSel?`<input type="checkbox" class="rowsel" data-isel="${i.id}" ${inboxSel.has(i.id)?"checked":""} aria-label="Выбрать" style="margin:0">`:""}<div class="sw" style="${swStyle(i)}"></div><div class="grow" data-open="${i.id}" style="cursor:pointer"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.room)} · <span class="money">${rub(sum(i))}</span> ${tri(i,true)}${i.variants?.length>1?` · ${i.variants.length} варианта`:""}</div>${waited(i)}</div><div class="actions">${(i.variants?.length>1&&role==="client")?`<button class="btn pri" data-open="${i.id}">Смотреть варианты</button>`:actionsFor(i).map(([l,to,c])=>`<button class="btn ${c}" data-move="${i.id}:${to}">${l}</button>`).join("")}</div></div>`).join(""):`<div class="empty">Всё разобрано. Новые задачи появятся, когда другая сторона передаст вам позицию.</div>`}</div></div>`;
 }
 function delivery(){
+  // Доска поставок: столбцы — статусы поставки, позицию можно перетащить или выбрать статус в списке
   const ord=items.filter(i=>i.st==="ord").sort((a,b)=>(a.eta||"9").localeCompare(b.eta||"9")),del=items.filter(i=>i.st==="del").sort((a,b)=>(b.etaFact||b.eta||"").localeCompare(a.etaFact||a.eta||""));
-  const over=ord.filter(isOver),prob=ord.filter(i=>i.ship==="problem"&&!isOver(i)),wait=ord.filter(i=>!isOver(i)&&i.ship!=="problem");
-  const r=i=>`<div class="row" data-open="${i.id}" style="cursor:pointer"><div class="date">${fmtDate(i.st==="del"?(i.etaFact||i.eta):i.eta)}</div><div class="sw" style="${swStyle(i)}"></div><div class="grow"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.sup||i.brand)} · ${esc(i.room)} · ${shipOf(i)}${i.st==="del"&&i.etaFact&&i.eta&&i.etaFact!==i.eta?` · план был ${fmtDate(i.eta)}`:""}</div></div>${tri(i,true)}</div>`;
-  const sec=(t,a,empty,c)=>`<section class="panel"><h3${c?` style="color:${c}"`:""}>${t}${a.length?` · ${a.length}`:""}</h3><div class="list">${a.map(r).join("")||`<div class="empty">${empty}</div>`}</div></section>`;
-  return `<div class="grid timeline">${over.length?sec("Просрочено",over,"",`var(--s-bad)`):""}${prob.length?sec("Проблема",prob,"","var(--s-bad)"):""}${sec("Ожидается",wait,"Нет позиций в пути")}${sec("Доставлено на объект",del,"Пока ничего не доставлено")}</div>`;
+  const canMv=role==="kompl"&&!readOnly,over=ord.filter(isOver);
+  const cols=[...Object.entries(SHIP).map(([k,t])=>[k,t,ord.filter(i=>(SHIP[i.ship]?i.ship:"ordered")===k)]),["del","Доставлено на объект",del]];
+  const opts=i=>cols.map(([k,t])=>`<option value="${k}"${(i.st==="del"?"del":SHIP[i.ship]?i.ship:"ordered")===k?" selected":""}>${t}</option>`).join("");
+  const card=i=>`<div class="kcard${isOver(i)?" over":""}" data-open="${i.id}"${canMv?` draggable="true" data-drag="${i.id}"`:""}><div class="kt"><span class="sw" style="${swStyle(i)}"></span><b>${esc(i.name)}</b></div><div class="m">${esc(i.sup||i.brand||"")}${i.room?` · ${esc(i.room)}`:""}</div><div class="m">${i.st==="del"?`доставлено ${fmtDate(i.etaFact||i.eta)}${i.etaFact&&i.eta&&i.etaFact!==i.eta?` · план был ${fmtDate(i.eta)}`:""}`:i.eta?`${isOver(i)?"<b>просрочено</b> · ":""}план ${fmtDate(i.eta)}`:"дата не указана"}</div>${canMv?`<select class="kmv" data-shipmv="${i.id}" aria-label="Статус поставки">${opts(i)}</select>`:""}</div>`;
+  return `${over.length?`<p class="note warn">Просрочено: ${over.length} поз. — отмечены красным.</p>`:""}${canMv?`<p class="note">Перетащите карточку в нужный столбец или выберите статус в списке на карточке. В «Доставлено на объект» сегодняшняя дата ставится сама, если фактической ещё нет.</p>`:""}<div class="kboard">${cols.map(([k,t,a])=>`<section class="panel kcol${k==="del"?" kdel":""}${k==="problem"?" kprob":""}" data-col="${k}"><h3>${t}${a.length?` · ${a.length}`:""}</h3><div class="kcards">${a.map(card).join("")||`<div class="empty">${k==="del"?"Перетащите сюда доставленное":"Пусто"}</div>`}</div></section>`).join("")}</div>`;
 }
-
+function shipMove(id,to){
+  const it=byId(id);if(!it||!["ord","del"].includes(it.st))return;
+  const cur=it.st==="del"?"del":SHIP[it.ship]?it.ship:"ordered";if(cur===to)return;
+  if(to==="del"){it.st="del";if(!it.etaFact)it.etaFact=today();it.comments=[...(it.comments||[]),{r:role,t:"Доставлено на объект.",d:now()}];toast("Доставлено на объект · "+fmtDate(it.etaFact))}
+  else{if(it.st==="del"){it.st="ord";it.etaFact="";it.comments=[...(it.comments||[]),{r:role,t:"Доставка отменена, позиция снова в ожидании.",d:now()}]}it.ship=to;toast("Статус поставки: "+SHIP[to])}
+  save(it);render();
+}
 function renderDrawer(){
   const d=$("#drawer"),s=$("#scrim");
   const i=openId&&byId(openId);
@@ -1720,6 +1735,15 @@ function voiceStart(el){
 document.addEventListener("click",e=>{const b=e.target.closest(".mic");if(!b)return;e.preventDefault();e.stopPropagation();const el=b.parentElement.querySelector("input,textarea");if(el)voiceStart(el)},true);
 new MutationObserver(()=>{if(!addMics.q){addMics.q=1;queueMicrotask(()=>{addMics.q=0;addMics()})}}).observe(document.body,{childList:true,subtree:true});
 addMics();
+
+// Перетаскивание карточек на доске поставок
+let dragId=null;
+document.addEventListener("dragstart",e=>{const c=e.target.closest?.("[data-drag]");if(!c)return;dragId=c.dataset.drag;c.classList.add("dragging");e.dataTransfer.effectAllowed="move";try{e.dataTransfer.setData("text/plain",dragId)}catch(_){}});
+document.addEventListener("dragend",()=>{dragId=null;document.querySelectorAll(".dragging,.kcol.drop").forEach(x=>x.classList.remove("dragging","drop"))});
+document.addEventListener("dragover",e=>{const col=dragId&&e.target.closest?.("[data-col]");if(!col)return;e.preventDefault();document.querySelectorAll(".kcol.drop").forEach(x=>x!==col&&x.classList.remove("drop"));col.classList.add("drop")});
+document.addEventListener("drop",e=>{const col=dragId&&e.target.closest?.("[data-col]");if(!col)return;e.preventDefault();const id=dragId;dragId=null;shipMove(id,col.dataset.col)});
+document.addEventListener("click",e=>{if(e.target.closest(".kmv"))e.stopPropagation()},true);
+document.addEventListener("change",e=>{if(e.target.dataset.shipmv)shipMove(e.target.dataset.shipmv,e.target.value)});
 </script>
 
 </body>
