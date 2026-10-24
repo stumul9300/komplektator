@@ -237,6 +237,10 @@ table.spec td.num,table.spec th.num{overflow-wrap:normal;white-space:nowrap}
 .timeline .row .date{font-family:var(--f-mono);font-size:13px;width:92px;flex:none}
 @media (max-width:560px){.brand h1{font-size:20px}.big{font-size:26px}}
 @media (prefers-reduced-motion:no-preference){aside.drawer{animation:in .18s ease-out}@keyframes in{from{transform:translateX(24px);opacity:.6}}}
+.vwrap{display:flex;gap:6px;align-items:center;flex:1;min-width:0}.vwrap>input{flex:1;min-width:0}
+.mic{flex:none;width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--bg);color:var(--fg);cursor:pointer;font-size:16px;line-height:1;display:inline-flex;align-items:center;justify-content:center;padding:0}
+.mic.off{opacity:.45}.mic.rec{background:#c0392b;border-color:#c0392b;color:#fff;animation:micp 1.2s infinite}
+@keyframes micp{0%{box-shadow:0 0 0 0 rgba(192,57,43,.5)}70%{box-shadow:0 0 0 8px rgba(192,57,43,0)}100%{box-shadow:0 0 0 0 rgba(192,57,43,0)}}
 </style>
 </head>
 <body>
@@ -1680,6 +1684,42 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape"&&openId){openId=null
 window.addEventListener("hashchange",()=>{if(/^#sup=/.test(location.hash)!==!!SUP_TOKEN){location.reload();return}const [h,hp]=location.hash.slice(1).split("/");if(hp&&projects.some(x=>x.id===hp)&&hp!==pid){switchProject(hp);return}if(ROLES[h]){role=h;render()}});
 render();
 connect();
+
+// Голосовой ввод: кнопка-микрофон у примечаний и комментариев (Web Speech API, русский язык)
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+const VOICE_SEL='#fNote,[data-f="note"],#cText,#rejForm input[name=text],#supMsg,input[name=comment],input[name=note],[data-voice]';
+let voice=null;
+function voiceFind(k){return k.id?document.getElementById(k.id):k.f?document.querySelector(`[data-f="${k.f}"]`):null}
+function addMics(){
+  document.querySelectorAll(VOICE_SEL).forEach(el=>{
+    if(el.dataset.mic||el.readOnly||el.disabled||el.type==="hidden")return;el.dataset.mic="1";
+    const w=document.createElement("span");w.className="vwrap";el.replaceWith(w);w.appendChild(el);
+    const b=document.createElement("button");b.type="button";b.className="mic"+(SR?"":" off");b.textContent="🎤";
+    b.title=SR?"Надиктовать голосом":"Голосовой ввод в этом браузере недоступен";b.setAttribute("aria-label","Надиктовать голосом");
+    if(voice&&voiceFind(voice.key)===el)b.classList.add("rec");
+    w.appendChild(b);
+  });
+}
+function voiceStop(){if(voice){try{voice.rec.stop()}catch(_){}}}
+function voiceStart(el){
+  if(!SR){el.focus();toast("В этом браузере голосовой ввод не работает. На телефоне нажмите микрофон на клавиатуре, на компьютере откройте сайт в Chrome, Edge или Safari.",6000);return}
+  if(voice){const same=voice.el===el;voiceStop();if(same)return}
+  const rec=new SR();rec.lang="ru-RU";rec.interimResults=true;rec.continuous=true;
+  const key={id:el.id,f:el.dataset.f};const base=el.value.trim();
+  const v=voice={rec,el,key,text:"",changed:false};
+  const target=()=>{if(!v.el.isConnected){const n=voiceFind(v.key);if(n)v.el=n}return v.el};
+  const mark=on=>{const b=target().parentElement?.querySelector(".mic");if(b)b.classList.toggle("rec",on)};
+  rec.onresult=e=>{let fin="",tmp="";for(let k=0;k<e.results.length;k++){const t=e.results[k][0].transcript;e.results[k].isFinal?fin+=t:tmp+=t}
+    let t=(fin+tmp).trim();if(t&&!base)t=t[0].toUpperCase()+t.slice(1);
+    const x=target();x.value=base&&t?base+" "+t:base||t;v.changed=true};
+  rec.onerror=e=>{if(e.error==="not-allowed"||e.error==="service-not-allowed")toast("Разрешите сайту доступ к микрофону (значок замка в адресной строке)",6000);else if(e.error==="no-speech")toast("Ничего не расслышал, попробуйте ещё раз");else if(e.error!=="aborted")toast("Голосовой ввод: ошибка "+e.error)};
+  rec.onend=()=>{mark(false);if(voice===v)voice=null;const x=target();if(v.changed&&x.isConnected){x.dispatchEvent(new Event("change",{bubbles:true}));x.focus()}};
+  try{rec.start()}catch(_){voice=null;return}
+  mark(true);toast("Говорите… Нажмите микрофон ещё раз, чтобы закончить",3000);
+}
+document.addEventListener("click",e=>{const b=e.target.closest(".mic");if(!b)return;e.preventDefault();e.stopPropagation();const el=b.parentElement.querySelector("input,textarea");if(el)voiceStart(el)},true);
+new MutationObserver(()=>{if(!addMics.q){addMics.q=1;queueMicrotask(()=>{addMics.q=0;addMics()})}}).observe(document.body,{childList:true,subtree:true});
+addMics();
 </script>
 
 </body>
