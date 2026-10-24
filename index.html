@@ -409,7 +409,7 @@ function newId(){return "p"+Date.now().toString(36)+Math.random().toString(36).s
 async function loadAll(){
   const [a,b]=await Promise.all([sb.from("items").select("*").order("created"),sb.from("project").select("*")]);
   if(a.error){offline=true;loaded=true;toast("Нет связи с базой данных");render();return}
-  const server=a.data.map(r=>({id:r.id,...r.data}));
+  const server=a.data.map(r=>({id:r.id,...r.data})).map(i=>ST[i.st]?i:{...i,st:"pick"});
   a.data.forEach(r=>{if(!unsaved.has(r.id))base.set(r.id,JSON.stringify(r.data))});
   // позиции, которые ещё сохраняются или не сохранились, оставляем в списке
   for(const [id,it] of unsaved){const k=server.findIndex(x=>x.id===id);if(k<0)server.push(it);else server[k]=it}
@@ -646,8 +646,10 @@ function projectPanel(){
 let secPick="";
 // ---------- Объекты ----------
 const STARTERS=[{id:"proj-souz",name:"Союз",sheet:"https://docs.google.com/spreadsheets/d/1m-GDiWp3xrqhlc_CY3O-f0hZlhulMafC3godvNxGJ-8/edit"},{id:"proj-ostrov",name:"Остров",sheet:"https://docs.google.com/spreadsheets/d/104jxGbnEHn03f1sd2cwTK9lxW5GMxn3PdfT8g7qZnr0/edit#gid=0"}];
+let startersTried=false;
 async function ensureStarterProjects(rows){
-  const miss=STARTERS.filter(x=>!rows.some(r=>r.id===x.id));if(!miss.length||!sb||role!=="kompl")return false;
+  const miss=STARTERS.filter(x=>!rows.some(r=>r.id===x.id));if(!miss.length||!sb||role!=="kompl"||startersTried)return false;
+  startersTried=true;
   const t=Date.now();const {error}=await sb.from("project").upsert(miss.map(({id,...d},k)=>({id,data:{...d,budget:0,address:"",vis:VIS_DEFAULT,created:t+k}})));
   if(error){handleWriteError(error);return false}
   await loadAll();return true;
