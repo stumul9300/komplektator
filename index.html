@@ -175,6 +175,7 @@ td .roomsel{background:transparent}
 .pick .sw{width:32px;height:32px}.pick .pn{flex:1;min-width:0;overflow-wrap:anywhere}
 .qtybox{border:1px solid var(--line);border-radius:10px;padding:12px}
 .calc{margin:10px 0 0;font-size:15px}
+.rowsel{width:18px;height:18px;margin:0 0 6px;accent-color:var(--accent);display:block}
 .filebtn{position:relative;overflow:hidden}.filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer}
 .timeline .row .date{font-family:var(--f-mono);font-size:13px;width:92px;flex:none}
 @media (max-width:560px){.brand h1{font-size:20px}.big{font-size:26px}}
@@ -374,17 +375,21 @@ function actionsFor(it){
     if(it.st==="ok")a.push(["Оформить заказ","ord","pri"]);
     if(it.st==="ord")a.push(["Отметить доставку","del","pri"]);
   }
-  if(role==="designer"&&it.st==="des"){a.push(it.needClient?["Согласовать и отправить заказчику","cli","pri"]:["Согласовать","ok","pri"]);a.push(["Вернуть на замену","pick","bad"])}
+  if(role==="designer"&&it.st==="des"){a.push(needC(it)?["Согласовать и отправить заказчику","cli","pri"]:["Согласовать","ok","pri"]);a.push(["Вернуть на замену","pick","bad"])}
   if(role==="client"&&it.st==="cli"){a.push([it.variants?.length>1?"Согласовать выбранный вариант":"Согласовать","ok","pri"]);a.push(["Отклонить","pick","bad"])}
   return a;
 }
 const DONE={des:"Отправлено дизайнеру",cli:"Отправлено заказчику",ok:"Позиция утверждена",ord:"Заказ оформлен",del:"Доставка отмечена",pick:"Возвращено комплектатору"};
-function move(id,to){
+// По умолчанию после дизайнера позиция идёт заказчику на основное согласование
+const needC=i=>i.needClient!==false;
+let selIds=new Set();
+function bulkMove(ids,to){ids.forEach(id=>{const it=byId(id);if(it)move(id,to,true)});toast(`${DONE[to]}: ${ids.length} поз.`);render()}
+function move(id,to,quiet){
   const it=byId(id);if(!it)return;
   const auto={des:"Отправлено на согласование.",cli:"Согласовано, передаю заказчику.",ok:role==="client"&&it.variants?.length>1?"Согласовываю вариант: "+it.name+".":"Утверждаю.",ord:"Заказ оформлен у поставщика.",del:"Позиция доставлена на объект.",pick:role==="client"?"Не подходит, прошу подобрать другой вариант.":"Нужна замена."};
   it.comments=[...(it.comments||[]),{r:role,t:auto[to],d:now()}];
   if(to==="ord"&&!it.sup)it.sup=it.brand;
-  it.st=to;toast(DONE[to]);save(it);render();
+  it.st=to;if(!quiet){toast(DONE[to]);}save(it);if(!quiet)render();
 }
 function choose(it,k){const v=it.variants[k];it.chosen=k;Object.assign(it,{name:v.name,brand:v.brand,sku:v.sku,price:v.price,clientPrice:v.clientPrice||0,sw:v.sw,url:v.url||"",img:v.img||""});save(it);render()}
 
@@ -554,7 +559,7 @@ function spec(){
   return `
   <div class="toolbar">
     <div class="chips">${usedRooms.map(r=>`<button class="chip" data-room="${esc(r)}" aria-pressed="${r===room}">${esc(r)}</button>`).join("")}</div>
-    ${canAdd?`<button class="btn pri" id="addToggle">Добавить позицию</button>`:""}
+    ${canAdd?`<div class="actions">${(()=>{const ids=[...selIds].filter(id=>byId(id)?.st==="pick");const nPick=items.filter(i=>i.st==="pick").length;return ids.length?`<button class="btn pri" id="bulkSend">Отправить дизайнеру (${ids.length})</button>`:nPick?`<button class="btn" id="selAllPick">Выбрать все в подборе (${nPick})</button>`:""})()}<button class="btn pri" id="addToggle">Добавить позицию</button></div>`:""}
   </div>
   ${canAdd?`<form class="add panel" id="addForm" ${items.length?"hidden":""}>
     <label class="field">Наименование<input id="fName" required placeholder="Например, кресло Lounge"></label>
@@ -577,14 +582,15 @@ function spec(){
   </form>`:""}
   ${!items.length&&!canAdd?emptyAll():`<div class="tablebox"><table>
     <thead><tr><th></th><th>Позиция</th><th>Помещение</th><th class="num">Кол-во</th><th class="num">Цена</th><th class="num">Сумма</th><th>Статус</th></tr></thead>
-    <tbody>${list.map(i=>`<tr data-open="${i.id}"><td style="width:52px"><div class="sw" style="${swStyle(i)}"></div></td><td><div class="t">${esc(i.name)}</div><div class="sku">${esc(i.brand)} · ${esc(i.sku)}${i.sup?` · ${esc(i.sup)}`:""}</div></td><td>${role==="kompl"&&!readOnly?roomSelect("roomOf-"+i.id,i.room,` data-room-item="${i.id}"`):esc(i.room)}</td><td class="num money">${qtyText(i)}</td><td class="num money">${rub(unitPrice(i))}${role!=="client"&&+i.clientPrice?`<div class="sku">клиенту ${rub(i.clientPrice)}</div>`:""}</td><td class="num money">${rub(sum(i))}${+i.delivery?`<div class="sku">вкл. доставку ${rub(i.delivery)}</div>`:""}${role!=="client"&&+i.bureauPrice?`<div class="sku">бюро ${rub(bureauSum(i))}</div>`:""}</td><td>${pill(i.st)}${i.needClient?` <span class="m" title="Нужно согласие заказчика">· ☑ заказчик</span>`:""}${i.variants?.length>1?` <span class="m">· ${i.variants.length} вар.</span>`:""}${i.comments?.length?` <span class="m">· ${i.comments.length} комм.</span>`:""}</td></tr>`).join("")||`<tr><td colspan="7" class="empty">${items.length?"В этом помещении пока нет позиций":"Добавьте первую позицию кнопкой выше"}</td></tr>`}</tbody>
+    <tbody>${list.map(i=>`<tr data-open="${i.id}"><td style="width:52px">${role==="kompl"&&!readOnly&&i.st==="pick"?`<input type="checkbox" class="rowsel" data-sel="${i.id}" ${selIds.has(i.id)?"checked":""} aria-label="Выбрать">`:""}<div class="sw" style="${swStyle(i)}"></div></td><td><div class="t">${esc(i.name)}</div><div class="sku">${esc(i.brand)} · ${esc(i.sku)}${i.sup?` · ${esc(i.sup)}`:""}</div></td><td>${role==="kompl"&&!readOnly?roomSelect("roomOf-"+i.id,i.room,` data-room-item="${i.id}"`):esc(i.room)}</td><td class="num money">${qtyText(i)}</td><td class="num money">${rub(unitPrice(i))}${role!=="client"&&+i.clientPrice?`<div class="sku">клиенту ${rub(i.clientPrice)}</div>`:""}</td><td class="num money">${rub(sum(i))}${+i.delivery?`<div class="sku">вкл. доставку ${rub(i.delivery)}</div>`:""}${role!=="client"&&+i.bureauPrice?`<div class="sku">бюро ${rub(bureauSum(i))}</div>`:""}</td><td>${pill(i.st)}${needC(i)?` <span class="m" title="Нужно согласие заказчика">· ☑ заказчик</span>`:""}${i.variants?.length>1?` <span class="m">· ${i.variants.length} вар.</span>`:""}${i.comments?.length?` <span class="m">· ${i.comments.length} комм.</span>`:""}</td></tr>`).join("")||`<tr><td colspan="7" class="empty">${items.length?"В этом помещении пока нет позиций":"Добавьте первую позицию кнопкой выше"}</td></tr>`}</tbody>
     <tfoot><tr><td></td><td colspan="4">Итого${room!=="Все"?" · "+esc(room):""}</td><td class="num money">${rub(tot)}</td><td></td></tr></tfoot>
   </table></div>`}${role==="kompl"&&!readOnly&&allItems.some(i=>i.deleted)?`<details class="panel" style="margin-top:16px"><summary style="cursor:pointer;font-weight:600">Корзина · ${allItems.filter(i=>i.deleted).length}</summary><div class="list" style="margin-top:8px">${allItems.filter(i=>i.deleted).map(i=>`<div class="row"><div class="sw" style="${swStyle(i)}"></div><div class="grow"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.room)}</div></div><button class="btn" data-restore="${i.id}">Вернуть</button></div>`).join("")}</div></details>`:""}`;
 }
 function inbox(){
   const t=mine();
   const hint={kompl:"Подобрать варианты, отправить дизайнеру, оформить заказ утверждённого и отметить доставку.",designer:"Проверить подбор комплектатора: согласовать или вернуть на замену. Галка «Согласовать с заказчиком» решает, пойдёт ли позиция к заказчику.",client:"Здесь позиции, которые команда отметила галкой «Согласовать с заказчиком». Откройте позицию, сравните варианты, выберите подходящий и согласуйте."}[role];
-  return `<h2>Мои задачи · ${ROLES[role].name}</h2><p class="note">${hint}</p>
+  const bulk=!readOnly&&t.length>1?(role==="designer"&&t.some(i=>i.st==="des")?`<button class="btn pri" id="bulkDes">Согласовать все (${t.filter(i=>i.st==="des").length}) и отправить заказчику</button>`:role==="kompl"&&t.some(i=>i.st==="pick")?`<button class="btn pri" id="bulkPick">Отправить все из подбора дизайнеру (${t.filter(i=>i.st==="pick").length})</button>`:""):"";
+  return `<div class="vizhead"><h2>Мои задачи · ${ROLES[role].name}</h2>${bulk}</div><p class="note">${hint}</p>
   <div class="panel"><div class="list">${t.length?t.map(i=>`<div class="row"><div class="sw" style="${swStyle(i)}"></div><div class="grow" data-open="${i.id}" style="cursor:pointer"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.room)} · <span class="money">${rub(sum(i))}</span> · ${ST[i.st].t}${i.variants?.length>1?` · ${i.variants.length} варианта`:""}</div></div><div class="actions">${(i.variants?.length>1&&role==="client")?`<button class="btn pri" data-open="${i.id}">Смотреть варианты</button>`:actionsFor(i).map(([l,to,c])=>`<button class="btn ${c}" data-move="${i.id}:${to}">${l}</button>`).join("")}</div></div>`).join(""):`<div class="empty">Всё разобрано. Новые задачи появятся, когда другая сторона передаст вам позицию.</div>`}</div></div>`;
 }
 function delivery(){
@@ -603,14 +609,14 @@ function renderDrawer(){
   const keepText=$("#cText")?.value||"";
   const acts=actionsFor(i);
   const owner=ST[i.st].owner;
-  const flow=FLOW.filter(f=>f!=="cli"||i.needClient);
+  const flow=FLOW.filter(f=>f!=="cli"||needC(i));
   const idx=flow.indexOf(i.st);
   const canTick=!readOnly&&((role==="kompl"&&i.st==="pick")||(role==="designer"&&i.st==="des"));
   const canPick=!readOnly&&role==="client"&&i.st==="cli";
   const V=i.variants||[];
   const vars=V.length>1?`<div><h3>Варианты · ${V.length}</h3><div class="vars">${V.map((v,k)=>`<div class="varwrap"><button class="var" data-var="${i.id}:${k}" aria-pressed="${k===i.chosen}" ${canPick?"":"disabled"}><span class="sw" style="${swStyle(v)}"></span><span class="grow"><span class="t">${esc(v.name)}</span><span class="m">${esc(v.brand)} · <span class="money">${rub(unitPrice(v))}</span> · сумма ${rub(unitPrice(v)*i.qty)}</span></span><span class="mark">${k===i.chosen?(canPick?"Выбран":"Текущий"):(canPick?"Выбрать":"")}</span></button>${safeUrl(v.url)?`<a class="vlink" href="${esc(safeUrl(v.url))}" target="_blank" rel="noopener">Открыть товар ↗</a>`:""}</div>`).join("")}</div></div>`:"";
   const addVar=!readOnly&&role==="kompl"&&i.st==="pick"?`<div><h3>Добавить вариант</h3><form class="add" id="varForm" style="margin:0"><label class="field">Название<input id="vName" required autocomplete="off"></label><label class="field">Бренд<input id="vBrand" autocomplete="off"></label><label class="field">Цена за ед., ₽<input id="vPrice" type="number" min="0" placeholder="по ссылке"></label><label class="field">Ссылка<input id="vUrl" type="url" placeholder="https://"></label><div class="field" style="justify-content:flex-end"><button class="btn" type="submit">Добавить вариант</button></div></form></div>`:"";
-  const tick=`<label class="check"><input type="checkbox" id="needClient" ${i.needClient?"checked":""} ${canTick?"":"disabled"}> Согласовать с заказчиком</label>`;
+  const tick=`<label class="check"><input type="checkbox" id="needClient" ${needC(i)?"checked":""} ${canTick?"":"disabled"}> Согласовать с заказчиком</label>`;
   const eta=!readOnly&&role==="kompl"&&i.st==="ord"?`<label class="field">Дата поставки<input id="etaInput" type="date" value="${esc(i.eta||"")}"></label>`:"";
   const del=!readOnly&&role==="kompl"?`<button class="btn bad" id="delBtn">${confirmDel?"Точно удалить? Нажмите ещё раз":"Удалить позицию"}</button>`:"";
   const link=safeUrl(i.url);
@@ -677,6 +683,10 @@ document.addEventListener("click",e=>{
     render();return;
   }
   if(e.target.id==="toM2"){const it=byId(openId);it.area=+it.qty||0;it.unit="м²";recalc(it);save(it);render();setTimeout(()=>$("#itemPack")?.focus(),0);return}
+  if(e.target.id==="bulkSend"){const ids=[...selIds].filter(id=>byId(id)?.st==="pick");selIds.clear();bulkMove(ids,"des");return}
+  if(e.target.id==="selAllPick"){items.filter(i=>i.st==="pick"&&(room==="Все"||i.room===room)).forEach(i=>selIds.add(i.id));render();return}
+  if(e.target.id==="bulkPick"){bulkMove(items.filter(i=>i.st==="pick").map(i=>i.id),"des");return}
+  if(e.target.id==="bulkDes"){const d=items.filter(i=>i.st==="des");d.forEach(i=>move(i.id,needC(i)?"cli":"ok",true));toast(`Согласовано: ${d.length} поз.`);render();return}
   const rb=e.target.closest("[data-restore]");
   if(rb){const it=byId(rb.dataset.restore);delete it.deleted;save(it);toast("Позиция возвращена");render();return}
   const vb=e.target.closest("[data-pinmode],[data-delviz],[data-unpin],#pinSave,#pinCancel");
@@ -750,6 +760,7 @@ document.addEventListener("input",e=>{
   if(e.target.id==="colTile"&&colEdit){colEdit.tile=+e.target.value;const st=document.querySelector('.stage.editable');if(st)st.style.backgroundSize=colEdit.tile+"% auto"}if(["fQty","fPack","fPrice"].includes(e.target.id))updatePackCalc()});
 let vizPending="";
 document.addEventListener("change",e=>{
+  if(e.target.dataset.sel){e.target.checked?selIds.add(e.target.dataset.sel):selIds.delete(e.target.dataset.sel);render()}
   if(e.target.dataset.colpick&&colEdit){const id=e.target.dataset.colpick,c=colEdit;c.title=$("#colTitle").value;
     if(e.target.checked){if(!c.bgId&&isArea(byId(id)?.unit))c.bgId=id;else{c.layers.push({itemId:id,x:35,y:30,w:30,blend:true});const it=byId(id);if(it&&!it.imgCut)setTimeout(()=>cutItem(it),0)}}
     else{if(c.bgId===id)c.bgId="";c.layers=c.layers.filter(l=>l.itemId!==id);colSel=null}
@@ -771,7 +782,7 @@ document.addEventListener("change",e=>{
   if(e.target.id==="fUnit")e.target.dataset.touched="1";
   if(["fUnit","fQty","fPack"].includes(e.target.id))updatePackCalc();
   if(["itemPrice","itemCPrice","itemBPrice","itemDeliv"].includes(e.target.id)){const it=byId(openId);it.price=+$("#itemPrice").value||0;it.clientPrice=+$("#itemCPrice").value||0;it.bureauPrice=+$("#itemBPrice").value||0;it.delivery=+$("#itemDeliv").value||0;save(it);toast("Цена сохранена");render()}
-  if(e.target.id==="needClient"){const it=byId(openId);it.needClient=e.target.checked;toast(it.needClient?"Позиция пойдёт на согласование заказчику":"Заказчику согласовывать не нужно");save(it);render()}
+  if(e.target.id==="needClient"){const it=byId(openId);it.needClient=e.target.checked;toast(needC(it)?"Позиция пойдёт на согласование заказчику":"Заказчику согласовывать не нужно");save(it);render()}
   if(e.target.dataset.vis){const[r,f]=e.target.dataset.vis.split(":");const v=structuredClone(project.vis||VIS_DEFAULT);v[r]={...v[r],[f]:e.target.checked};project.vis=v;saveProject();toast(`${ROLES[r].name}: «${VIS_FEATURES.find(x=>x[0]===f)[1]}» ${e.target.checked?"видно":"скрыто"}`);render()}
   if(e.target.dataset.cl!==undefined){const it=byId(openId);it.checklist[+e.target.dataset.cl].done=e.target.checked;save(it);render()}
   if(e.target.id==="showClient"){const it=byId(openId);it.hideClient=!e.target.checked;save(it);toast(it.hideClient?"Позиция скрыта от заказчика":"Заказчик видит позицию");render()}
