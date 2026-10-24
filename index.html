@@ -50,6 +50,7 @@ header{background:var(--surface);border-bottom:1px solid var(--line)}
 .hist .ch{color:var(--muted)}.hist .ch b{color:var(--fg);font-weight:500}
 .filters{display:flex;flex-wrap:wrap;gap:10px 12px}.filters .field{flex:1 1 150px;min-width:0}
 .queues{display:flex;flex-wrap:wrap;gap:10px}.queue{flex:1 1 140px;display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--bg);text-align:left;cursor:pointer}.queue b{font-size:24px;font-family:var(--f-mono)}.queue span{font-size:13px;color:var(--muted)}.queue:hover{border-color:var(--accent)}.queue.bad b{color:var(--s-bad)}
+.fins{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.fin{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border:1px solid var(--line);border-radius:10px}.fin span{font-size:12px;color:var(--muted)}.fin b{font-size:18px}
 .histday{margin:18px 0 6px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
 .tour-spot{position:fixed;z-index:90;border-radius:10px;box-shadow:0 0 0 3px var(--brass),0 0 0 9999px rgba(10,16,13,.55);pointer-events:none;transition:all .2s}
 .tour-card{position:fixed;z-index:91;width:min(340px,calc(100vw - 32px));background:var(--surface);color:var(--fg);border-radius:12px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.3)}
@@ -287,6 +288,15 @@ let tab="overview",room="Все",openId=null,confirmDel=false;
 const VIS_FEATURES=[["prices","Цены и бюджет"],["checklist","Чек-листы"],["payments","Счета и оплаты"],["delivery","Поставки"]];
 const VIS_DEFAULT={designer:{prices:true,checklist:true,payments:false,delivery:true},client:{prices:true,checklist:false,payments:true,delivery:true}};
 const PAY={none:"Счёта нет",invoice:"Счёт выставлен",partial:"Оплачено частично",paid:"Оплачено"};
+const PTYPE={advance:"Аванс",extra:"Доплата",refund:"Возврат"};
+// Оплаты: список платежей; возвраты хранятся положительными суммами и уменьшают оплаченное
+const payList=i=>payOf(i).list||[];
+const paidNet=i=>{const L=payList(i);return L.length?L.reduce((s,x)=>s+(x.type==="refund"?-1:1)*(+x.amount||0),0):(+payOf(i).paid||0)};
+const orderCost=i=>+payOf(i).invoice||sum(i);
+const payLeft=i=>orderCost(i)-paidNet(i);
+function payStatusAuto(i){const n=paidNet(i),c=orderCost(i);return n>0&&n>=c?"paid":n>0?"partial":+payOf(i).invoice?"invoice":"none"}
+const SHIP={ordered:"Заказано",transit:"В пути",problem:"Проблема"};
+const shipOf=i=>i.st==="del"?"Доставлено":["ord"].includes(i.st)?SHIP[i.ship||"ordered"]:"Не заказано";
 const CHECK_TEMPLATE=["Запросить КП","Получить счёт","Оплатить","Отгрузить","Принять на объекте"];
 let allItems=[],items=[],project={name:"Новый проект",budget:0,address:"",vis:VIS_DEFAULT};
 let loaded=false,offline=false,readOnly=false;
@@ -551,6 +561,8 @@ function move(id,to,quiet,why){
   const auto={des:"Отправлено на согласование.",cli:"Согласовано, передаю заказчику.",ok:role==="client"&&it.variants?.length>1?"Согласовываю вариант: "+it.name+".":"Утверждаю.",ord:"Заказ оформлен у поставщика.",del:"Позиция доставлена на объект.",pick:(role==="client"?"Не подходит, прошу подобрать другой вариант.":"Нужна замена.")+(why?` Причина: ${why.reason}${why.text?` — ${why.text}`:""}.`:"")};
   it.comments=[...(it.comments||[]),{r:role,t:auto[to],d:now()}];
   if(to==="ord"&&!it.sup)it.sup=it.brand;
+  if(to==="ord"&&!it.ship)it.ship="ordered";
+  if(to==="del"&&!it.etaFact)it.etaFact=today();
   if(to==="des"){it.sd="";it.sc=""}
   if(to==="cli")it.sd="ok";
   if(to==="ok"){if(role==="client")it.sc="ok";else it.sd="ok"}
@@ -589,7 +601,7 @@ function overview(){
   const rooms=[...new Set(items.map(i=>i.room))].map(r=>{const its=items.filter(i=>i.room===r);return[r,its.reduce((s,i)=>s+sum(i),0),its.length]}).sort((a,b)=>b[1]-a[1]);
   const maxR=Math.max(1,...rooms.map(r=>r[1]));
   const tasks=mine();
-  return projectPanel()+accessPanel()+queuesPanel()+`
+  return projectPanel()+accessPanel()+queuesPanel()+financePanel()+`
   <div class="grid">
     ${can("prices")?`<section class="panel">
       <h3>Бюджет комплектации</h3>
@@ -695,17 +707,26 @@ function renders(){
       ${pins.length?`<div class="list" style="margin-top:10px">${pins.map(p=>`<div class="row"><span class="pin static">${p.k+1}</span><div class="sw" style="${swStyle(p.it)}"></div><div class="grow" data-open="${p.it.id}" style="cursor:pointer"><div class="t">${esc(p.it.name)}</div><div class="m">${esc(p.it.room)} · <span class="money">${rub(sum(p.it))}</span></div></div>${tri(p.it,true)}${canEdit?`<button class="btn" data-unpin="${v.id}:${p.k}" title="Убрать метку" aria-label="Убрать метку">×</button>`:""}</div>`).join("")}</div>`:""}
     </section>`}).join("");
 }
+// Финансовая сводка: каждая сумма — по выбранным вариантам с учётом количества и доставки
+function finance(){
+  const act=items.filter(i=>!i.replacedBy); // заменённая после заказа позиция в суммы не входит, её оплаты — входят
+  const S=f=>act.filter(f).reduce((s,i)=>s+sum(i),0);
+  const ordered=act.filter(i=>["ord","del"].includes(i.st)||paidNet(i)>0);
+  const F={budget:+project.budget||0,current:S(()=>true),approved:S(i=>["ok","ord","del"].includes(i.st)),ordered:S(i=>["ord","del"].includes(i.st)),paid:items.reduce((s,i)=>s+paidNet(i),0),left:ordered.reduce((s,i)=>s+Math.max(0,payLeft(i)),0),deliv:items.reduce((s,i)=>s+(+i.delivery||0),0)};
+  return F;
+}
+function financePanel(){
+  if(!can("prices"))return "";
+  const F=finance();
+  const cell=(t,v,c)=>`<div class="fin"><span>${t}</span><b class="money"${c?` style="color:${c}"`:""}>${v==null?"—":rub(v)}</b></div>`;
+  return `<section class="panel" style="margin-bottom:16px"><h3>Финансы</h3><div class="fins">${cell("Плановый бюджет",F.budget||null)}${cell("Сумма позиций",F.current,F.budget&&F.current>F.budget?"var(--s-bad)":"")}${cell("Утверждено",F.approved)}${cell("Заказано",F.ordered)}${cell("Оплачено",F.paid,"var(--s-ok)")}${cell("Остаток к оплате",F.left,F.left>0?"var(--s-des)":"")}</div><p class="m" style="margin:8px 0 0">Суммы включают доставку${F.deliv?` (${rub(F.deliv)})`:""}. Альтернативные варианты не суммируются — считается только выбранный. Позиции, заменённые после заказа, в суммы не входят, но их оплаты учтены. Остаток — по заказанным и оплачиваемым позициям: стоимость заказа − оплаты + возвраты.</p></section>`;
+}
 function payments(){
-  const list=items.filter(i=>["ok","ord","del"].includes(i.st)||payOf(i).status!=="none");
-  const inv=list.reduce((s,i)=>s+(+payOf(i).invoice||0),0),paid=list.reduce((s,i)=>s+(+payOf(i).paid||0),0);
-  return `<div class="grid" style="margin-bottom:16px">
-    <section class="panel"><h3>Выставлено счетов</h3><div class="big money">${rub(inv)}</div></section>
-    <section class="panel"><h3>Оплачено</h3><div class="big money">${rub(paid)}</div></section>
-    <section class="panel"><h3>Осталось оплатить</h3><div class="big money" style="color:${inv-paid>0?"var(--s-des)":"var(--fg)"}">${rub(inv-paid)}</div></section>
-  </div>
+  const list=items.filter(i=>["ok","ord","del"].includes(i.st)||payOf(i).status!=="none"||payList(i).length);
+  return financePanel()+`
   <div class="tablebox"><table>
-    <thead><tr><th>Позиция</th><th>Помещение</th><th class="num">Сумма по спецификации</th><th class="num">Счёт</th><th class="num">Оплачено</th><th>Статус</th></tr></thead>
-    <tbody>${list.map(i=>{const p=payOf(i);return `<tr data-open="${i.id}"><td><div class="t">${esc(i.name)}</div><div class="sku">${esc(i.sup||i.brand)}</div></td><td>${esc(i.room)}</td><td class="num money">${rub(sum(i))}</td><td class="num money">${p.invoice?rub(p.invoice):"—"}</td><td class="num money">${p.paid?rub(p.paid):"—"}</td><td><span class="pill" style="color:var(${{none:"--muted",invoice:"--s-des",partial:"--s-cli",paid:"--s-ok"}[p.status]})">${PAY[p.status]}</span></td></tr>`}).join("")||`<tr><td colspan="6" class="empty">Счета появятся, когда позиции будут утверждены</td></tr>`}</tbody>
+    <thead><tr><th>Позиция</th><th>Помещение</th><th class="num">Стоимость заказа</th><th class="num">Оплачено</th><th class="num">Остаток</th><th>Статус</th></tr></thead>
+    <tbody>${list.map(i=>{const st=payStatusAuto(i);return `<tr data-open="${i.id}"><td><div class="t">${esc(i.name)}</div><div class="sku">${esc(i.sup||i.brand)}${payList(i).length?` · платежей: ${payList(i).length}`:""}</div></td><td>${esc(i.room)}</td><td class="num money">${rub(orderCost(i))}</td><td class="num money">${paidNet(i)?rub(paidNet(i)):"—"}</td><td class="num money">${rub(payLeft(i))}</td><td><span class="pill" style="color:var(${{none:"--muted",invoice:"--s-des",partial:"--s-cli",paid:"--s-ok"}[st]})">${PAY[st]}</span></td></tr>`}).join("")||`<tr><td colspan="6" class="empty">Счета появятся, когда позиции будут утверждены</td></tr>`}</tbody>
   </table></div>`;
 }
 function projectPanel(){
@@ -1290,12 +1311,11 @@ function inbox(){
   <div class="panel"><div class="list">${t.length?t.map(i=>`<div class="row">${canSel?`<input type="checkbox" class="rowsel" data-isel="${i.id}" ${inboxSel.has(i.id)?"checked":""} aria-label="Выбрать" style="margin:0">`:""}<div class="sw" style="${swStyle(i)}"></div><div class="grow" data-open="${i.id}" style="cursor:pointer"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.room)} · <span class="money">${rub(sum(i))}</span> ${tri(i,true)}${i.variants?.length>1?` · ${i.variants.length} варианта`:""}</div>${waited(i)}</div><div class="actions">${(i.variants?.length>1&&role==="client")?`<button class="btn pri" data-open="${i.id}">Смотреть варианты</button>`:actionsFor(i).map(([l,to,c])=>`<button class="btn ${c}" data-move="${i.id}:${to}">${l}</button>`).join("")}</div></div>`).join(""):`<div class="empty">Всё разобрано. Новые задачи появятся, когда другая сторона передаст вам позицию.</div>`}</div></div>`;
 }
 function delivery(){
-  const ord=items.filter(i=>i.st==="ord").sort((a,b)=>(a.eta||"9").localeCompare(b.eta||"9")),del=items.filter(i=>i.st==="del");
-  const r=i=>`<div class="row" data-open="${i.id}" style="cursor:pointer"><div class="date">${fmtDate(i.eta)}</div><div class="sw" style="${swStyle(i)}"></div><div class="grow"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.sup||i.brand)} · ${esc(i.room)}</div></div>${tri(i,true)}</div>`;
-  return `<div class="grid timeline">
-    <section class="panel"><h3>Ожидается</h3><div class="list">${ord.map(r).join("")||`<div class="empty">Нет позиций в пути</div>`}</div></section>
-    <section class="panel"><h3>Доставлено на объект</h3><div class="list">${del.map(r).join("")||`<div class="empty">Пока ничего не доставлено</div>`}</div></section>
-  </div>`;
+  const ord=items.filter(i=>i.st==="ord").sort((a,b)=>(a.eta||"9").localeCompare(b.eta||"9")),del=items.filter(i=>i.st==="del").sort((a,b)=>(b.etaFact||b.eta||"").localeCompare(a.etaFact||a.eta||""));
+  const over=ord.filter(isOver),prob=ord.filter(i=>i.ship==="problem"&&!isOver(i)),wait=ord.filter(i=>!isOver(i)&&i.ship!=="problem");
+  const r=i=>`<div class="row" data-open="${i.id}" style="cursor:pointer"><div class="date">${fmtDate(i.st==="del"?(i.etaFact||i.eta):i.eta)}</div><div class="sw" style="${swStyle(i)}"></div><div class="grow"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.sup||i.brand)} · ${esc(i.room)} · ${shipOf(i)}${i.st==="del"&&i.etaFact&&i.eta&&i.etaFact!==i.eta?` · план был ${fmtDate(i.eta)}`:""}</div></div>${tri(i,true)}</div>`;
+  const sec=(t,a,empty,c)=>`<section class="panel"><h3${c?` style="color:${c}"`:""}>${t}${a.length?` · ${a.length}`:""}</h3><div class="list">${a.map(r).join("")||`<div class="empty">${empty}</div>`}</div></section>`;
+  return `<div class="grid timeline">${over.length?sec("Просрочено",over,"",`var(--s-bad)`):""}${prob.length?sec("Проблема",prob,"","var(--s-bad)"):""}${sec("Ожидается",wait,"Нет позиций в пути")}${sec("Доставлено на объект",del,"Пока ничего не доставлено")}</div>`;
 }
 
 function renderDrawer(){
@@ -1313,7 +1333,8 @@ function renderDrawer(){
   const vars=V.length>1?`<div><h3>Варианты · ${V.length}</h3><div class="vars">${V.map((v,k)=>`<div class="varwrap"><button class="var" data-var="${i.id}:${k}" aria-pressed="${k===i.chosen}" ${canPick?"":"disabled"}><span class="sw" style="${swStyle(v)}"></span><span class="grow"><span class="t">${esc(v.name)}</span><span class="m">${esc(v.brand)} · <span class="money">${rub(unitPrice(v))}</span> · сумма ${rub(unitPrice(v)*i.qty)}</span></span><span class="mark">${k===i.chosen?(canPick?"Выбран":"Текущий"):(canPick?"Выбрать":"")}</span></button>${safeUrl(v.url)?`<a class="vlink" href="${esc(safeUrl(v.url))}" target="_blank" rel="noopener">Открыть товар ↗</a>`:""}</div>`).join("")}</div></div>`:"";
   const addVar=!readOnly&&role==="kompl"&&i.st==="pick"?`<div><h3>Добавить вариант</h3><form class="add" id="varForm" style="margin:0"><label class="field">Название<input id="vName" required autocomplete="off"></label><label class="field">Бренд<input id="vBrand" autocomplete="off"></label><label class="field">Цена за ед., ₽<input id="vPrice" type="number" min="0" placeholder="по ссылке"></label><label class="field">Ссылка<input id="vUrl" type="url" placeholder="https://"></label><div class="field" style="justify-content:flex-end"><button class="btn" type="submit">Добавить вариант</button></div></form></div>`:"";
   const tick=`<label class="check"><input type="checkbox" id="needClient" ${needC(i)?"checked":""} ${canTick?"":"disabled"}> Согласовать с заказчиком</label>`;
-  const eta=!readOnly&&role==="kompl"&&i.st==="ord"?`<label class="field">Дата поставки<input id="etaInput" type="date" value="${esc(i.eta||"")}"></label>`:"";
+  const over=isOver(i);
+  const eta=["ord","del"].includes(i.st)&&can("delivery")?`<div><h3>Поставка</h3>${role==="kompl"&&!readOnly&&i.st==="ord"?`<div class="add" style="margin:0"><label class="field">Статус<select id="shipSel">${Object.entries(SHIP).map(([k,t])=>`<option value="${k}"${(i.ship||"ordered")===k?" selected":""}>${t}</option>`).join("")}</select></label><label class="field">Плановая дата<input id="etaInput" type="date" value="${esc(i.eta||"")}"></label><label class="field">Фактическая дата<input id="etaFact" type="date" value="${esc(i.etaFact||"")}"></label></div><div class="actions" style="margin-top:8px"><button class="btn" id="replaceAfter">Замена после заказа</button></div>`:`<dl><dt>Статус</dt><dd>${shipOf(i)}</dd><dt>План</dt><dd>${fmtDate(i.eta)}</dd>${i.etaFact?`<dt>Факт</dt><dd>${fmtDate(i.etaFact)}</dd>`:""}</dl>`}${over?`<p class="m" style="color:var(--s-bad);margin:6px 0 0">Просрочено: плановая дата прошла, поставка не закрыта.</p>`:""}${i.replacedBy&&byId(i.replacedBy)?`<p class="m">Заменена позицией <button class="btn link" data-open="${i.replacedBy}">«${esc(byId(i.replacedBy).name)}»</button>.</p>`:""}${i.replaces&&byId(i.replaces)?`<p class="m">Замена для <button class="btn link" data-open="${i.replaces}">«${esc(byId(i.replaces).name)}»</button>.</p>`:""}</div>`:(i.replaces&&byId(i.replaces)?`<p class="m">Замена для <button class="btn link" data-open="${i.replaces}">«${esc(byId(i.replaces).name)}»</button> (исходная позиция и её оплаты сохранены).</p>`:"");
   const del=!readOnly&&role==="kompl"?`<div class="actions"><button class="btn" id="dupBtn">Дублировать позицию</button><button class="btn" id="priceOk">Цена проверена${i.priceCheckedAt?` (было ${new Date(i.priceCheckedAt).toLocaleDateString("ru-RU",{day:"numeric",month:"short"})})`:""}</button></div><button class="btn bad" id="delBtn">${confirmDel?"Точно удалить? Нажмите ещё раз":"Удалить позицию"}</button>`:"";
   const link=safeUrl(i.url);
   const photoTop=imgOk(i.img)?`<img class="photo" src="${esc(i.img)}" alt="${esc(i.name)}">`:"";
@@ -1324,7 +1345,12 @@ function renderDrawer(){
   const CL=i.checklist||[];
   const checklist=can("checklist")?`<div><h3>Чек-лист${CL.length?` · ${CL.filter(c=>c.done).length}/${CL.length}`:""}</h3><div class="cl">${CL.map((c,k)=>`<label class="check"><input type="checkbox" data-cl="${k}" ${c.done?"checked":""} ${isK?"":"disabled"}> <span${c.done?' class="done"':""}>${esc(c.t)}</span></label>`).join("")||`<div class="m" style="color:var(--muted);font-size:14px">Пунктов пока нет.</div>`}</div>${isK?`<form class="compose" id="clForm" style="margin-top:8px"><input id="clText" placeholder="Новый пункт" autocomplete="off"><button class="btn" type="submit">Добавить</button></form>${CL.length?"":`<button class="btn link" id="clTpl" style="margin-top:8px">Добавить типовые пункты: КП, счёт, оплата, отгрузка</button>`}`:""}</div>`:"";
   const p=payOf(i);
-  const pay=can("payments")?`<div><h3>Счёт и оплата</h3>${isK?`<div class="add" style="margin:0"><label class="field">Статус<select id="payStatus">${Object.entries(PAY).map(([k,t])=>`<option value="${k}"${k===p.status?" selected":""}>${t}</option>`).join("")}</select></label><label class="field">Сумма счёта, ₽<input id="payInvoice" type="number" min="0" value="${p.invoice||""}" placeholder="${i.price*i.qty||""}"></label><label class="field">Оплачено, ₽<input id="payPaid" type="number" min="0" value="${p.paid||""}"></label></div>`:`<dl><dt>Статус</dt><dd>${PAY[p.status]}</dd><dt>Счёт</dt><dd class="money">${p.invoice?rub(p.invoice):"—"}</dd><dt>Оплачено</dt><dd class="money">${p.paid?rub(p.paid):"—"}</dd></dl>`}</div>`:"";
+  const PL=payList(i);
+  const pay=can("payments")?`<div><h3>Счёт и оплаты</h3>
+    <dl><dt>Стоимость заказа</dt><dd class="money">${rub(orderCost(i))}${+p.invoice?" (по счёту)":" (по спецификации)"}</dd><dt>Оплачено</dt><dd class="money">${rub(paidNet(i))}</dd><dt>Остаток</dt><dd class="money"><b>${rub(payLeft(i))}</b></dd><dt>Статус</dt><dd>${PAY[payStatusAuto(i)]}</dd></dl>
+    ${PL.length?`<ul class="hist">${PL.map((x,k)=>`<li><time>${esc(x.date?new Date(x.date).toLocaleDateString("ru-RU"):"")}</time><b>${PTYPE[x.type]||"Платёж"}</b> <span class="money">${x.type==="refund"?"−":""}${rub(x.amount)}</span>${x.note?` · ${esc(x.note)}`:""}${isK?` <button class="btn link" data-paydel="${k}" aria-label="Удалить платёж">удалить</button>`:""}</li>`).join("")}</ul>`:""}
+    ${isK?`<div class="add" style="margin:8px 0 0"><label class="field">Сумма счёта, ₽<input id="payInvoice" type="number" min="0" value="${p.invoice||""}" placeholder="${sum(i)||""}"></label></div>
+    <form class="add" id="payForm" style="margin:8px 0 0"><label class="field">Дата<input name="date" type="date" value="${today()}"></label><label class="field">Сумма, ₽<input name="amount" type="number" min="0" step="any" required></label><label class="field">Тип<select name="type">${Object.entries(PTYPE).map(([k,t])=>`<option value="${k}">${t}</option>`).join("")}</select></label><label class="field">Примечание<input name="note" placeholder="№ платёжки, способ"></label><div class="field" style="justify-content:flex-end"><button class="btn" type="submit">Добавить платёж</button></div></form>`:""}</div>`:"";
   const hide=isK?`<label class="check"><input type="checkbox" id="showClient" ${i.hideClient?"":"checked"}> Показывать заказчику</label>`:"";
   d.hidden=false;s.hidden=false;
   d.innerHTML=`<div class="dh">${!readOnly&&role==="kompl"?`<label class="sw swup" style="${swStyle(i)}" title="Загрузить фото (или Ctrl+V)"><input type="file" id="imgFileHead" accept="image/*" aria-label="Загрузить фото">${imgOk(i.img)?`<span class="swhint">заменить</span>`:`<span class="swplus">＋<br>фото</span>`}</label>`:`<div class="sw" style="${swStyle(i)}"></div>`}<div style="min-width:0"><h2>${esc(i.name)}</h2>${tri(i,true)}</div><button class="close" id="close" aria-label="Закрыть">×</button></div>
@@ -1404,6 +1430,11 @@ document.addEventListener("click",e=>{
   if(e.target.id==="dupBtn"){const it=byId(openId);if(it)duplicateItem(it);return}
   if(e.target.id==="priceOk"){const it=byId(openId);if(it){it.priceCheckedAt=Date.now();it.priceCheckedBy=role;save(it);toast("Отмечено: цена проверена сегодня");render()}return}
   if(e.target.id==="exportPdf"){exportPdf();return}
+  if(e.target.dataset.paydel!=null&&openId){const it=byId(openId);const L=[...payList(it)];const x=L[+e.target.dataset.paydel];if(!x||!confirm(`Удалить платёж ${fmtRub(x.amount)}? Запись останется в истории.`))return;L.splice(+e.target.dataset.paydel,1);it.pay={...payOf(it),list:L};it.pay.paid=paidNet(it);it.pay.status=payStatusAuto(it);save(it);render();return}
+  if(e.target.id==="replaceAfter"){const it=byId(openId);if(!it||!confirm("Создать позицию-замену? Исходная позиция, её оплаты и история сохранятся, а у неё будет отметка «Проблема / заменена»."))return;
+    const nw=structuredClone(it);Object.assign(nw,{id:newId(),created:Date.now(),name:it.name+" (замена)",st:"pick",sd:"",sc:"",approvals:[],comments:[{r:role,t:`Замена после заказа для «${it.name}».`,d:now()}],pay:{status:"none",invoice:0,paid:0,list:[]},eta:"",etaFact:"",ship:"",replaces:it.id,reapprove:false});delete nw.replacedBy;delete nw._no;
+    it.ship="problem";it.replacedBy=nw.id;it.comments=[...(it.comments||[]),{r:role,t:`Заменена после заказа: новая позиция «${nw.name}».`,d:now()}];
+    allItems.push(nw);save(it);save(nw);openId=nw.id;toast("Создана позиция-замена, исходная сохранена");render();return}
   if(e.target.closest("[data-rejcancel]")){$(".rejmodal")?.remove();return}
   if(e.target.id==="inbOk"){const ids=[...inboxSel].filter(x=>mine().some(i=>i.id===x));ids.forEach(x=>{const i=byId(x);move(x,role==="client"?"ok":(needC(i)?"cli":"ok"),true)});inboxSel.clear();toast(`Согласовано: ${ids.length} поз.`);render();return}
   if(e.target.id==="inbRej"){const ids=[...inboxSel].filter(x=>mine().some(i=>i.id===x));if(ids.length)askReject(ids);return}
@@ -1537,7 +1568,9 @@ document.addEventListener("change",e=>{
   if(e.target.dataset.vis){const[r,f]=e.target.dataset.vis.split(":");const v=structuredClone(project.vis||VIS_DEFAULT);v[r]={...v[r],[f]:e.target.checked};project.vis=v;saveProject();toast(`${ROLES[r].name}: «${VIS_FEATURES.find(x=>x[0]===f)[1]}» ${e.target.checked?"видно":"скрыто"}`);render()}
   if(e.target.dataset.cl!==undefined){const it=byId(openId);it.checklist[+e.target.dataset.cl].done=e.target.checked;save(it);render()}
   if(e.target.id==="showClient"){const it=byId(openId);it.hideClient=!e.target.checked;save(it);toast(it.hideClient?"Позиция скрыта от заказчика":"Заказчик видит позицию");render()}
-  if(["payStatus","payInvoice","payPaid"].includes(e.target.id)){const it=byId(openId);it.pay={status:$("#payStatus").value,invoice:+$("#payInvoice").value||0,paid:+$("#payPaid").value||0};if(it.pay.paid&&it.pay.invoice&&it.pay.paid>=it.pay.invoice){it.pay.status="paid";}save(it);toast("Оплата сохранена");render()}
+  if(e.target.id==="shipSel"){const it=byId(openId);it.ship=e.target.value;save(it);toast("Статус поставки: "+SHIP[it.ship]);render();return}
+  if(e.target.id==="etaFact"){const it=byId(openId);it.etaFact=e.target.value;save(it);toast("Фактическая дата сохранена");render();return}
+  if(e.target.id==="payInvoice"){const it=byId(openId);it.pay={...payOf(it),invoice:+e.target.value||0};it.pay.status=payStatusAuto(it);save(it);toast("Оплата сохранена");render()}
   if(e.target.id==="etaInput"){const it=byId(openId);it.eta=e.target.value;save(it);toast("Дата поставки сохранена");render()}
 });
 document.addEventListener("submit",e=>{
@@ -1545,6 +1578,9 @@ document.addEventListener("submit",e=>{
   const id=e.target.id;
   if(e.target.dataset.ans){saveAnswer(e.target);return}
   if(id==="supForm"){createSupReq();return}
+  if(id==="payForm"){const it=byId(openId),f=new FormData(e.target);const x={id:newId(),date:f.get("date")||today(),amount:+f.get("amount")||0,type:f.get("type"),note:String(f.get("note")||"").trim(),by:role};if(!x.amount)return;
+    const P=payOf(it);const L=[...(P.list||[])];if(!L.length&&+P.paid)L.push({id:newId(),date:"",amount:+P.paid,type:"advance",note:"оплата до учёта платежей"});
+    L.push(x);it.pay={...P,list:L,paid:0};it.pay.paid=paidNet(it);it.pay.status=payStatusAuto(it);save(it);toast(`${PTYPE[x.type]} ${fmtRub(x.amount)} добавлен. Остаток ${fmtRub(payLeft(it))}`);render();return}
   if(id==="rejForm"){const f=new FormData(e.target),why={reason:f.get("why"),text:String(f.get("text")||"").trim()};const ids=e.target.dataset.ids.split(",");$(".rejmodal").remove();ids.forEach(x=>move(x,"pick",true,why));ids.forEach(x=>inboxSel.delete(x));toast(ids.length>1?`Отклонено: ${ids.length} поз.`:DONE.pick);render();return}
   if(id==="compose"){const t=$("#cText").value.trim();if(!t)return;const it=byId(openId);it.comments=[...(it.comments||[]),{r:role,t,d:now()}];$("#cText").value="";save(it);render();$("#cText")?.focus()}
   if(id==="clForm"){const t=$("#clText").value.trim();if(!t)return;const it=byId(openId);it.checklist=[...(it.checklist||[]),{t,done:false}];save(it);render();$("#clText")?.focus()}
