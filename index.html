@@ -91,6 +91,11 @@ tbody tr:hover td{background:var(--sunk)}
 td.num,th.num{text-align:right}
 .sku{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
 tfoot td{font-weight:600;border-bottom:0}
+tr.sechead td{background:var(--sunk);font-weight:700;text-transform:uppercase;letter-spacing:.04em;font-size:13px;cursor:default}
+tr.roomhead td{font-size:13px;color:var(--muted);font-weight:600;padding-top:8px;padding-bottom:6px;cursor:default}
+tr.sectot td{font-weight:600;cursor:default}
+tr.sechead:hover td,tr.roomhead:hover td,tr.sectot:hover td{background:inherit}
+.no{font-family:var(--f-mono);font-size:12px;color:var(--muted);margin-right:6px}
 .empty{padding:20px;color:var(--muted);text-align:center}
 /* drawer */
 .scrim{position:fixed;inset:0;background:rgba(10,15,12,.4);z-index:20}
@@ -224,6 +229,11 @@ const ROOMS=["Гостиная","Кухня","Спальня","Ванная","С
 const allRooms=()=>[...new Set([...ROOMS,...(project.rooms||[]),...allItems.map(i=>i.room).filter(Boolean)])];
 // Выпадающий список помещений с пунктом «Другое…» для нового помещения
 const roomSelect=(id,cur,extra="")=>`<select id="${id}" class="roomsel"${extra}>${cur?"":`<option value="" selected disabled>— выберите —</option>`}${allRooms().map(r=>`<option${r===cur?" selected":""}>${esc(r)}</option>`).join("")}<option value="__new">＋ Другое помещение…</option></select>`;
+// Разделы сметы, как в Excel: Отопление, Двери, Сантехника… Внутри раздела позиции идут по помещениям
+const SECTIONS=["Отопление","Двери","Сантехника","Освещение","Электрика","Отделочные материалы","Мебель","Кухня и техника","Текстиль и декор","Прочее"];
+const allSections=()=>[...new Set([...SECTIONS,...(project.sections||[]),...allItems.map(i=>i.section).filter(Boolean)])];
+const sectionSelect=(id,cur,extra="")=>`<select id="${id}" class="roomsel"${extra}><option value=""${cur?"":" selected"}>— без раздела —</option>${allSections().map(r=>`<option${r===cur?" selected":""}>${esc(r)}</option>`).join("")}<option value="__new">＋ Другой раздел…</option></select>`;
+function addSection(name){name=(name||"").trim();if(!name)return "";if(!allSections().includes(name)){project.sections=[...(project.sections||[]),name];saveProject()}return name}
 function addRoom(name){name=(name||"").trim();if(!name)return "";if(!allRooms().includes(name)){project.rooms=[...(project.rooms||[]),name];saveProject()}return name}
 const SWATCH=["#A8B5A2","#C4B49A","#8E9AA6","#B79C86","#D9D4CA","#7C6A58","#C8D0D2"];
 
@@ -253,7 +263,7 @@ const packs=i=>isArea(i.unit)&&+i.perPack>0&&+i.area>0?Math.ceil(+i.area/+i.perP
 function recalc(i){const n=packs(i);if(n)i.qty=+(n*i.perPack).toFixed(3);else if(isArea(i.unit)&&+i.area>0)i.qty=+i.area;return i}
 const fmtN=n=>new Intl.NumberFormat("ru-RU",{maximumFractionDigits:3}).format(+n||0);
 const AREA_RE=/керамогранит|плитк|мозаик|ламинат|паркет|инженерн.*доск|массивн.*доск|обои|линолеум|ковролин|кварцвинил|spc|керамическ/i;
-const qtyText=i=>{const n=packs(i);if(n)return `<b>${n} кор.</b> × ${fmtN(i.perPack)} ${esc(i.unit)}<div class="sku">нужно ${fmtN(i.area)} → берём ${fmtN(i.qty)} ${esc(i.unit)}</div>`;if(isArea(i.unit))return `${fmtN(i.qty)} ${esc(i.unit)}<div class="sku">в коробке ?</div>`;return `${fmtN(i.qty)} ${esc(i.unit||"шт")}${AREA_RE.test(i.name||"")?`<div class="sku" style="color:var(--s-des)">в м²?</div>`:""}`};
+const qtyText=i=>{const n=packs(i);if(n)return `<b>${n} кор.</b> × ${fmtN(i.perPack)} ${esc(i.unit)}<div class="sku">нужно ${fmtN(i.area)} → берём ${fmtN(i.qty)} ${esc(i.unit)}</div>`;if(isArea(i.unit))return `${fmtN(i.qty)} ${esc(i.unit)}${i.unit==="м²"?`<div class="sku">в коробке ?</div>`:""}`;return `${fmtN(i.qty)} ${esc(i.unit||"шт")}${AREA_RE.test(i.name||"")?`<div class="sku" style="color:var(--s-des)">в м²?</div>`:""}`};
 const pill=s=>`<span class="pill" style="color:var(${ST[s].c})">${ST[s].t}</span>`;
 const now=()=>new Date().toLocaleString("ru-RU",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});
 const fmtDate=d=>{if(!d)return"—";const x=new Date(d+"T00:00");return isNaN(x)?d:x.toLocaleDateString("ru-RU",{day:"numeric",month:"short"})};
@@ -356,7 +366,7 @@ async function mergeWithServer(id,mine){
 }
 async function save(it){
   if(!sb){render();return}
-  const {id,...body}=it;
+  const {id,_no,...body}=it;
   unsaved.set(id,it);
   for(let attempt=0;attempt<3;attempt++){
     const data=await mergeWithServer(id,JSON.parse(JSON.stringify(body)));
@@ -604,8 +614,86 @@ function projectPanel(){
     <label class="field">Название<input id="pjName" value="${esc(project.name)}" required></label>
     <label class="field">Адрес<input id="pjAddr" value="${esc(project.address)}" placeholder="Город, улица, дом"></label>
     <label class="field">Бюджет комплектации, ₽<input id="pjBudget" type="number" min="0" value="${project.budget||""}"></label>
+    <label class="field">Площадь объекта, м²<input id="pjArea" type="number" min="0" step="any" value="${project.area||""}" placeholder="для цены за м²"></label>
     <div class="field" style="justify-content:flex-end"><button class="btn pri" type="submit">Сохранить</button></div>
   </form></details>`;
+}
+let secPick="";
+// ---------- Excel: загрузка сметы и выгрузка в том же виде ----------
+let xlsxReady;
+function loadXlsx(){return xlsxReady||=new Promise((res,rej)=>{if(window.XLSX)return res(window.XLSX);const sc=document.createElement("script");sc.src="vendor/xlsx.full.min.js";sc.onload=()=>res(window.XLSX);sc.onerror=()=>{xlsxReady=null;rej(new Error("не загрузилась библиотека Excel"))};document.head.appendChild(sc)})}
+const SEC_WORDS=[[/отоплен|радиатор|конвектор/i,"Отопление"],[/^двер/i,"Двери"],[/сантех/i,"Сантехника"],[/освет|свет/i,"Освещение"],[/электр/i,"Электрика"],[/отдел|плитк|напольн/i,"Отделочные материалы"],[/мебел/i,"Мебель"],[/техник/i,"Кухня и техника"],[/текстил|декор/i,"Текстиль и декор"]];
+const cap=t=>t?t[0].toUpperCase()+t.slice(1):t;
+const normUnit=u=>{u=String(u||"").trim().toLowerCase().replace(/\.$/,"");if(!u)return "шт";if(/^м2|^м²|^кв/.test(u))return "м²";if(/пог|^м\.?п|^мп/.test(u))return "пог. м";if(/^компл|^к-т/.test(u))return "компл.";if(/^шт/.test(u))return "шт";return u};
+// Разбирает смету: строки без цены и количества — это заголовки разделов или помещений, «ИТОГО…» пропускаются
+function parseSheet(rows){
+  const hi=rows.findIndex(r=>r.some(c=>/наимен/i.test(String(c))));if(hi<0)return [];
+  const H=rows[hi].map(c=>String(c).toLowerCase());const col=re=>H.findIndex(h=>re.test(h));
+  const C={name:col(/наимен/),dims:col(/габарит/),unit:col(/ед\.?\s*изм|^ед/),price:col(/цена/),qty:col(/кол/),total:col(/итог|стоимост/),color:col(/цвет/),ident:col(/идентиф/),url:col(/ссылк/),st:col(/статус/),note:col(/дополн|примеч|коммент/)};
+  const g=(r,k)=>C[k]<0?"":String(r[C[k]]??"").trim();
+  let section="",roomName="",groupIdent="",groupNote="";const out=[];
+  for(const r of rows.slice(hi+1)){
+    const name=g(r,"name");if(!name)continue;
+    if(/^итого|^всего|стоимость за м/i.test(name))continue;
+    const price=toNum(g(r,"price")),qty=toNum(g(r,"qty")),total=toNum(g(r,"total"));
+    if(!g(r,"unit")&&!price&&!qty&&!total){
+      const sw=SEC_WORDS.find(([re])=>re.test(name));
+      if(sw&&!/^\d+\.|^д-\d/i.test(name)&&(/ведомость/i.test(name)||name.split(/\s+/).length<=3)){section=sw[1];roomName="";groupIdent="";groupNote="";continue}
+      let t=name.replace(/^\d+[.)]\s*/,"");const par=(t.match(/\(([^)]*)\)/)||[])[1]||"";
+      const id=(t.match(/^([А-ЯA-Z]{1,3}-\d+)/i)||[])[1];
+      if(id){groupIdent=id.toUpperCase();roomName=par?cap(par.toLowerCase()):roomName;groupNote=""}
+      else{groupIdent="";roomName=cap(t.replace(/\(.*?\)/g,"").trim().toLowerCase());groupNote=par}
+      continue;
+    }
+    const st=/достав/i.test(g(r,"st"))?"del":/^заказ/i.test(g(r,"st"))?"ord":"pick";
+    out.push({section,room:roomName||"Общее",name:name.slice(0,300),brand:"—",sku:"—",dims:g(r,"dims"),color:g(r,"color"),ident:g(r,"ident")||groupIdent,note:[groupNote,g(r,"note")].filter(Boolean).join("; "),url:/^https?:/i.test(g(r,"url"))?g(r,"url"):"",unit:normUnit(g(r,"unit")),qty:qty||1,price:price||(qty&&total?Math.round(total/qty*100)/100:0),st});
+  }
+  return out;
+}
+async function importXls(file){
+  try{
+    toast("Читаю файл…");const X=await loadXlsx();
+    const wb=X.read(await file.arrayBuffer());
+    const sheets=wb.SheetNames.map(n=>({n,rows:X.utils.sheet_to_json(wb.Sheets[n],{header:1,raw:false,defval:""})}));
+    const best=sheets.map(sh=>({...sh,items:parseSheet(sh.rows)})).sort((a,b)=>b.items.length-a.items.length)[0];
+    if(!best||!best.items.length){toast("Не нашла в файле колонку «Наименование»");return}
+    const secs=new Set(best.items.map(i=>i.section).filter(Boolean));
+    if(!confirm(`Лист «${best.n}»: ${best.items.length} поз.${secs.size?` в разделах: ${[...secs].join(", ")}`:""}.\nДобавить их в спецификацию?`))return;
+    const t0=Date.now();
+    best.items.forEach((d,k)=>{const it={id:newId(),created:t0+k,img:"",sup:shopName(d.url),clientPrice:0,bureauPrice:0,delivery:0,area:d.unit==="м²"?d.qty:0,perPack:0,sw:SWATCH[k%SWATCH.length],comments:[],needClient:true,variants:[],chosen:0,checklist:[],pay:{status:"none",invoice:0,paid:0},...d};allItems.push(it);save(it)});
+    room="Все";toast(`Добавлено позиций: ${best.items.length}`);render();
+  }catch(e){console.error(e);toast("Не получилось прочитать файл: "+e.message)}
+}
+async function exportXls(){
+  try{
+    const X=await loadXlsx();
+    const head=["№ П/П","НАИМЕНОВАНИЕ, ПРОИЗВОДИТЕЛЬ, АРТИКУЛ","ГАБАРИТЫ (ДхШхВ), ММ","ЕД.ИЗМ.","ЦЕНА ЗА ЕДИНИЦУ, РУБ","КОЛ-ВО","ИТОГОВАЯ СТОИМОСТЬ, РУБ","ЦВЕТ","ИДЕНТИФИКАТОР","ССЫЛКА","СТАТУС","СОГЛАСОВАНИЕ","ДОПОЛНЕНИЕ"];
+    const aoa=[head];const stTxt=i=>i.st==="del"?"Доставлено":i.st==="ord"?"Заказано":"Не заказано";
+    const agree=i=>i.st==="pick"?"Подбор":i.st==="des"?"У дизайнера":i.st==="cli"?"У заказчика":"Утверждено";
+    const nm=i=>[i.name,i.brand,i.sku].filter(x=>x&&x!=="—").join(", ");
+    let grand=0;
+    groups(items).forEach(g=>{
+      if(g.sec!==null)aoa.push(["",(g.sec||"Без раздела").toUpperCase()]);
+      g.rooms.forEach(r=>{aoa.push(["",r.room||"Помещение не указано"]);r.items.forEach(i=>aoa.push([i._no,nm(i),i.dims||"",i.unit||"шт",unitPrice(i),+i.qty||0,sum(i),i.color||"",i.ident||"",i.url||"",stTxt(i),agree(i),[i.note,+i.delivery?`доставка ${i.delivery} ₽`:""].filter(Boolean).join("; ")]))});
+      if(g.sec!==null){aoa.push(["","ИТОГО ПО РАЗДЕЛУ, РУБ:","","","","",g.total,...(+project.area?["стоимость за м2",Math.round(g.total/project.area*100)/100]:[])])}
+      grand+=g.total;aoa.push([]);
+    });
+    aoa.push(["","ИТОГО, РУБ:","","","","",grand,...(+project.area?["стоимость за м2",Math.round(grand/project.area*100)/100]:[])]);
+    const ws=X.utils.aoa_to_sheet(aoa);ws["!cols"]=[6,60,16,8,14,8,16,12,14,30,12,14,30].map(w=>({wch:w}));
+    const wb=X.utils.book_new();X.utils.book_append_sheet(wb,ws,"Комплектация");
+    X.writeFile(wb,`${(project.name||"Комплектация").replace(/[\\/:*?"<>|]/g,"")}.xlsx`);
+  }catch(e){console.error(e);toast("Не получилось сохранить Excel: "+e.message)}
+}
+const perM2=t=>+project.area>0&&t?` <span class="m">· ${rub(Math.round(t/project.area))} за м²</span>`:"";
+// Группировка как в смете: раздел → помещение → позиции, со сквозной нумерацией «раздел.позиция»
+function groups(list){
+  const useSec=list.some(i=>i.section);
+  const order=useSec?[...allSections(),""]:[null];
+  const secs=order.map(sec=>{const its=list.filter(i=>sec===null||(i.section||"")===sec);if(!its.length)return null;
+    const rooms=[...new Set(its.map(i=>i.room||""))].map(r=>({room:r,items:its.filter(i=>(i.room||"")===r)}));
+    return {sec,rooms,total:its.reduce((a,i)=>a+sum(i),0)}}).filter(Boolean);
+  secs.forEach((g,k)=>{let n=0;g.rooms.forEach(r=>r.items.forEach(i=>{n++;i._no=useSec?`${k+1}.${n}`:`${n}`}))});
+  return secs;
 }
 function spec(){
   const list=items.filter(i=>room==="Все"||i.room===room);
@@ -616,11 +704,13 @@ function spec(){
   return `
   <div class="toolbar">
     <div class="chips">${usedRooms.map(r=>`<button class="chip" data-room="${esc(r)}" aria-pressed="${r===room}">${esc(r)}</button>`).join("")}</div>
-    ${canAdd?`<div class="actions">${(()=>{const ids=[...selIds].filter(id=>byId(id)?.st==="pick");const nPick=items.filter(i=>i.st==="pick").length;return ids.length?`<button class="btn pri" id="bulkSend">Отправить дизайнеру (${ids.length})</button>`:nPick?`<button class="btn" id="selAllPick">Выбрать все в подборе (${nPick})</button>`:""})()}<button class="btn pri" id="addToggle">Добавить позицию</button></div>`:""}
+    ${canAdd?`<div class="actions">${(()=>{const ids=[...selIds].filter(id=>byId(id)?.st==="pick");const nPick=items.filter(i=>i.st==="pick").length;return ids.length?`<button class="btn pri" id="bulkSend">Отправить дизайнеру (${ids.length})</button>`:nPick?`<button class="btn" id="selAllPick">Выбрать все в подборе (${nPick})</button>`:""})()}<input type="file" id="xlsFile" accept=".xlsx,.xls,.ods,.csv" hidden><button class="btn" id="importXls">Загрузить из Excel</button><button class="btn pri" id="addToggle">Добавить позицию</button></div>`:""}
+    ${items.length?`<button class="btn" id="exportXls">Скачать Excel</button>`:""}
   </div>
   ${canAdd?`<form class="add panel" id="addForm" ${items.length?"hidden":""}>
     <label class="field">Наименование<input id="fName" required placeholder="Например, кресло Lounge"></label>
     <label class="field">Помещение${roomSelect("fRoom",room!=="Все"?room:""," required")}<input id="fRoomNew" placeholder="Название помещения" hidden></label>
+    <label class="field">Раздел${sectionSelect("fSection",secPick)}<input id="fSectionNew" placeholder="Название раздела" hidden></label>
     <label class="field">Бренд<input id="fBrand" placeholder="Производитель"></label>
     <label class="field">Артикул<input id="fSku" placeholder="Артикул поставщика"></label>
     <label class="field">Поставщик<input id="fSup" placeholder="подставится по ссылке"></label>
@@ -630,6 +720,10 @@ function spec(){
     <label class="field"><span id="fQtyLabel">Кол-во</span><input id="fQty" type="number" min="0" step="any" value="1"></label>
     <label class="field" id="fPackWrap" hidden>В коробке, <span id="fPackUnit">м²</span><input id="fPack" type="number" min="0" step="any" placeholder="например, 1.44"></label>
     <div class="field" id="fPackCalc" hidden></div>
+    <label class="field">Габариты (Д×Ш×В), мм<input id="fDims" placeholder="1370х300х100"></label>
+    <label class="field">Цвет<input id="fColor"></label>
+    <label class="field">Идентификатор<input id="fIdent" placeholder="например, Д-01"></label>
+    <label class="field">Дополнение<input id="fNote"></label>
     <label class="field">Цена за ед., ₽<input id="fPrice" type="number" min="0" placeholder="0"></label>
     <label class="field">Цена для клиента, ₽<input id="fCPrice" type="number" min="0" placeholder="если нет точной"></label>
     <label class="field">Цена для бюро, ₽<input id="fBPrice" type="number" min="0" placeholder="за ед., не видит заказчик"></label>
@@ -639,8 +733,8 @@ function spec(){
   </form>`:""}
   ${!items.length&&!canAdd?emptyAll():`<div class="tablebox"><table>
     <thead><tr><th></th><th>Позиция</th><th>Помещение</th><th class="num">Кол-во</th><th class="num">Цена</th><th class="num">Сумма</th><th>Статус</th></tr></thead>
-    <tbody>${list.map(i=>`<tr data-open="${i.id}"><td style="width:52px">${role==="kompl"&&!readOnly&&i.st==="pick"?`<input type="checkbox" class="rowsel" data-sel="${i.id}" ${selIds.has(i.id)?"checked":""} aria-label="Выбрать">`:""}<div class="sw" style="${swStyle(i)}"></div></td><td><div class="t">${esc(i.name)}</div><div class="sku">${esc(i.brand)} · ${esc(i.sku)}${i.sup?` · ${esc(i.sup)}`:""}</div></td><td>${role==="kompl"&&!readOnly?roomSelect("roomOf-"+i.id,i.room,` data-room-item="${i.id}"`):esc(i.room)}</td><td class="num money">${qtyText(i)}</td><td class="num money">${rub(unitPrice(i))}${role!=="client"&&+i.clientPrice?`<div class="sku">клиенту ${rub(i.clientPrice)}</div>`:""}</td><td class="num money">${rub(sum(i))}${+i.delivery?`<div class="sku">вкл. доставку ${rub(i.delivery)}</div>`:""}${role!=="client"&&+i.bureauPrice?`<div class="sku">бюро ${rub(bureauSum(i))}</div>`:""}</td><td>${tri(i)}${i.variants?.length>1?` <span class="m">${i.variants.length} вар.</span>`:""}${i.comments?.length?` <span class="m">· ${i.comments.length} комм.</span>`:""}</td></tr>`).join("")||`<tr><td colspan="7" class="empty">${items.length?"В этом помещении пока нет позиций":"Добавьте первую позицию кнопкой выше"}</td></tr>`}</tbody>
-    <tfoot><tr><td></td><td colspan="4">Итого${room!=="Все"?" · "+esc(room):""}</td><td class="num money">${rub(tot)}</td><td></td></tr></tfoot>
+    <tbody>${groups(list).map(g=>(g.sec!==null?`<tr class="sechead"><td colspan="7">${esc(g.sec||"Без раздела")}</td></tr>`:"")+g.rooms.map(r=>`<tr class="roomhead"><td></td><td colspan="6">${esc(r.room||"Помещение не указано")}</td></tr>`+r.items.map(i=>`<tr data-open="${i.id}"><td style="width:52px">${role==="kompl"&&!readOnly&&i.st==="pick"?`<input type="checkbox" class="rowsel" data-sel="${i.id}" ${selIds.has(i.id)?"checked":""} aria-label="Выбрать">`:""}<div class="sw" style="${swStyle(i)}"></div></td><td><div class="t"><span class="no">${i._no||""}</span>${esc(i.name)}</div><div class="sku">${[i.brand,i.sku,i.sup,i.ident,i.dims&&i.dims+" мм",i.color,i.note].filter(x=>x&&x!=="—").map(esc).join(" · ")}</div></td><td>${role==="kompl"&&!readOnly?roomSelect("roomOf-"+i.id,i.room,` data-room-item="${i.id}"`):esc(i.room)}</td><td class="num money">${qtyText(i)}</td><td class="num money">${rub(unitPrice(i))}${role!=="client"&&+i.clientPrice?`<div class="sku">клиенту ${rub(i.clientPrice)}</div>`:""}</td><td class="num money">${rub(sum(i))}${+i.delivery?`<div class="sku">вкл. доставку ${rub(i.delivery)}</div>`:""}${role!=="client"&&+i.bureauPrice?`<div class="sku">бюро ${rub(bureauSum(i))}</div>`:""}</td><td>${tri(i)}${i.variants?.length>1?` <span class="m">${i.variants.length} вар.</span>`:""}${i.comments?.length?` <span class="m">· ${i.comments.length} комм.</span>`:""}</td></tr>`).join("")).join("")+(g.sec!==null?`<tr class="sectot"><td></td><td colspan="4">Итого по разделу${perM2(g.total)}</td><td class="num money">${rub(g.total)}</td><td></td></tr>`:"")).join("")||`<tr><td colspan="7" class="empty">${items.length?"В этом помещении пока нет позиций":"Добавьте первую позицию кнопкой выше"}</td></tr>`}</tbody>
+    <tfoot><tr><td></td><td colspan="4">Итого${room!=="Все"?" · "+esc(room):""}${perM2(tot)}</td><td class="num money">${rub(tot)}</td><td></td></tr></tfoot>
   </table></div>`}${role==="kompl"&&!readOnly&&allItems.some(i=>i.deleted)?`<details class="panel" style="margin-top:16px"><summary style="cursor:pointer;font-weight:600">Корзина · ${allItems.filter(i=>i.deleted).length}</summary><div class="list" style="margin-top:8px">${allItems.filter(i=>i.deleted).map(i=>`<div class="row"><div class="sw" style="${swStyle(i)}"></div><div class="grow"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.room)}</div></div><button class="btn" data-restore="${i.id}">Вернуть</button></div>`).join("")}</div></details>`:""}`;
 }
 function inbox(){
@@ -691,8 +785,9 @@ function renderDrawer(){
   d.innerHTML=`<div class="dh">${!readOnly&&role==="kompl"?`<label class="sw swup" style="${swStyle(i)}" title="Загрузить фото (или Ctrl+V)"><input type="file" id="imgFileHead" accept="image/*" aria-label="Загрузить фото">${imgOk(i.img)?`<span class="swhint">заменить</span>`:`<span class="swplus">＋<br>фото</span>`}</label>`:`<div class="sw" style="${swStyle(i)}"></div>`}<div style="min-width:0"><h2>${esc(i.name)}</h2>${tri(i,true)}</div><button class="close" id="close" aria-label="Закрыть">×</button></div>
   <div class="db">
     ${photoTop}
-    <dl><dt>Помещение</dt><dd>${!readOnly&&(role==="kompl"||role==="designer")?`${roomSelect("itemRoom",i.room)}<input id="itemRoomNew" placeholder="Название и Enter" hidden style="margin-top:6px">`:esc(i.room)}</dd><dt>Бренд</dt><dd>${esc(i.brand)}</dd><dt>Артикул</dt><dd class="sku">${esc(i.sku)}</dd>${i.sup?`<dt>Поставщик</dt><dd>${esc(i.sup)}</dd>`:""}<dt>Количество</dt><dd class="money">${qtyText(i)}</dd><dt>Цена</dt><dd class="money">${rub(unitPrice(i))}</dd>${role!=="client"&&+i.clientPrice?`<dt>Для клиента</dt><dd class="money">${rub(i.clientPrice)}</dd>`:""}${+i.delivery?`<dt>Доставка</dt><dd class="money">${rub(i.delivery)}</dd>`:""}<dt>Сумма</dt><dd class="money"><b>${rub(sum(i))}</b></dd>${role!=="client"&&+i.bureauPrice?`<dt>Цена для бюро</dt><dd class="money">${rub(i.bureauPrice)} за ед. · итого ${rub(bureauSum(i))}</dd>`:""}${(i.st==="ord"||i.st==="del")&&can("delivery")?`<dt>Поставка</dt><dd>${fmtDate(i.eta)} · ${esc(i.sup||i.brand)}</dd>`:""}${link?`<dt>Ссылка</dt><dd><a href="${esc(link)}" target="_blank" rel="noopener">Открыть товар ↗</a></dd>`:""}</dl>
+    <dl>${!isK&&i.section?`<dt>Раздел</dt><dd>${esc(i.section)}</dd>`:""}${!isK?[["Габариты, мм",i.dims],["Цвет",i.color],["Идентификатор",i.ident],["Дополнение",i.note]].filter(x=>x[1]).map(([a,b])=>`<dt>${a}</dt><dd>${esc(b)}</dd>`).join(""):""}<dt>Помещение</dt><dd>${!readOnly&&(role==="kompl"||role==="designer")?`${roomSelect("itemRoom",i.room)}<input id="itemRoomNew" placeholder="Название и Enter" hidden style="margin-top:6px">`:esc(i.room)}</dd><dt>Бренд</dt><dd>${esc(i.brand)}</dd><dt>Артикул</dt><dd class="sku">${esc(i.sku)}</dd>${i.sup?`<dt>Поставщик</dt><dd>${esc(i.sup)}</dd>`:""}<dt>Количество</dt><dd class="money">${qtyText(i)}</dd><dt>Цена</dt><dd class="money">${rub(unitPrice(i))}</dd>${role!=="client"&&+i.clientPrice?`<dt>Для клиента</dt><dd class="money">${rub(i.clientPrice)}</dd>`:""}${+i.delivery?`<dt>Доставка</dt><dd class="money">${rub(i.delivery)}</dd>`:""}<dt>Сумма</dt><dd class="money"><b>${rub(sum(i))}</b></dd>${role!=="client"&&+i.bureauPrice?`<dt>Цена для бюро</dt><dd class="money">${rub(i.bureauPrice)} за ед. · итого ${rub(bureauSum(i))}</dd>`:""}${(i.st==="ord"||i.st==="del")&&can("delivery")?`<dt>Поставка</dt><dd>${fmtDate(i.eta)} · ${esc(i.sup||i.brand)}</dd>`:""}${link?`<dt>Ссылка</dt><dd><a href="${esc(link)}" target="_blank" rel="noopener">Открыть товар ↗</a></dd>`:""}</dl>
     ${qtyEdit}
+    ${isK?`<div><h3>Как в смете</h3><div class="add" style="margin:0"><label class="field">Раздел${sectionSelect("itemSection",i.section||"")}<input id="itemSectionNew" placeholder="Название и Enter" hidden style="margin-top:6px"></label><label class="field">Габариты (Д×Ш×В), мм<input data-f="dims" value="${esc(i.dims||"")}"></label><label class="field">Цвет<input data-f="color" value="${esc(i.color||"")}"></label><label class="field">Идентификатор<input data-f="ident" value="${esc(i.ident||"")}"></label><label class="field">Дополнение<input data-f="note" value="${esc(i.note||"")}"></label></div></div>`:""}
     ${photoEdit}
     ${tick}
     ${hide}
@@ -760,7 +855,7 @@ document.addEventListener("click",e=>{
     else if(vb.id==="pinCancel")pendingPin=null;
     render();return;
   }
-  const b=e.target.closest("[data-role],[data-tab],[data-room],[data-open],[data-move],[data-var],#close,#scrim,#addToggle,#delBtn,#clTpl,#seedBtn,#imgFetch,#imgDel");
+  const b=e.target.closest("[data-role],[data-tab],[data-room],[data-open],[data-move],[data-var],#close,#scrim,#addToggle,#importXls,#exportXls,#delBtn,#clTpl,#seedBtn,#imgFetch,#imgDel");
   if(!b)return;
   if(b.id==="delBtn"){
     if(!confirmDel){confirmDel=true;renderDrawer();return}
@@ -780,6 +875,8 @@ document.addEventListener("click",e=>{
   else if(b.dataset.open){openId=b.dataset.open;renderDrawer()}
   else if(b.id==="close"||b.id==="scrim"){openId=null;renderDrawer()}
   else if(b.id==="clTpl"){const it=byId(openId);it.checklist=CHECK_TEMPLATE.map(t=>({t,done:false}));save(it);render()}
+  else if(b.id==="importXls"){$("#xlsFile").click()}
+  else if(b.id==="exportXls"){exportXls()}
   else if(b.id==="addToggle"){const f=$("#addForm");f.hidden=!f.hidden;if(!f.hidden)$("#fName").focus()}
 });
 function updatePackCalc(){
@@ -837,6 +934,11 @@ document.addEventListener("change",e=>{
   if(e.target.id==="itemImgUrl"){const v=e.target.value.trim();if(/^https?:\/\//i.test(v)){const it=byId(openId);imageLoads(v).then(ok=>{if(ok){it.img=v;save(it);toast("Фото добавлено");render()}else toast("По этой ссылке картинка не открывается")})}}
   if(e.target.id==="fFile"&&e.target.files[0]){fileToDataUrl(e.target.files[0]).then(d=>{pendingImg=d;const el=$("#fPrev");setPrev(el,d)})}
   if((e.target.id==="imgFile"||e.target.id==="imgFileHead")&&e.target.files[0]){const it=byId(openId);fileToDataUrl(e.target.files[0]).then(d=>{it.img=d;it.imgCut="";save(it);toast("Фото загружено");render()})}
+  if(e.target.dataset.f&&openId){const it=byId(openId);it[e.target.dataset.f]=e.target.value.trim();save(it);toast("Сохранено");render()}
+  if(e.target.id==="itemSection"){const n=$("#itemSectionNew");if(e.target.value==="__new"){n.hidden=false;n.focus()}else{const it=byId(openId);it.section=e.target.value;save(it);toast(it.section?"Раздел: "+it.section:"Без раздела");render()}}
+  if(e.target.id==="itemSectionNew"){const nm=addSection(e.target.value);if(nm){const it=byId(openId);it.section=nm;save(it);toast("Раздел: "+nm);render()}}
+  if(e.target.id==="fSection"){const n=$("#fSectionNew");n.hidden=e.target.value!=="__new";if(!n.hidden)n.focus()}
+  if(e.target.id==="xlsFile"&&e.target.files[0]){importXls(e.target.files[0]);e.target.value=""}
   if(e.target.id==="itemSup"){const it=byId(openId);it.sup=e.target.value.trim();save(it);toast("Поставщик сохранён");render()}
   if(e.target.id==="itemUrl"){const it=byId(openId);it.url=e.target.value.trim();if(it.url&&!it.sup)it.sup=shopName(it.url);save(it);if(it.url){toast("Ищу фото и цену на странице товара…");fetchPreview(it.url).then(r=>{const got=[];if(r.img&&!it.img){it.img=r.img;got.push("фото")}if(r.price&&!it.price){it.price=r.price;got.push("цена")}if(got.length){save(it);toast("Добавлено: "+got.join(" и "));render()}else if(!it.img||!it.price)toast("Не всё нашлось на странице. Укажите вручную.")})}render()}
   if(e.target.id==="itemBoxes"){const it=byId(openId);const b=Math.max(0,Math.round(+e.target.value||0));if(+it.perPack>0&&b){it.area=+(b*it.perPack).toFixed(3);recalc(it);save(it);render()}else toast("Сначала укажите, сколько в коробке")}
@@ -871,11 +973,12 @@ document.addEventListener("submit",e=>{
     vizPending="";vizList.push(v);pinMode=v.id;saveViz(v);toast("Визуализация добавлена. Кликните по картинке, чтобы поставить метку");render();
   }
   if(id==="projForm"){
-    project={...project,name:$("#pjName").value.trim()||"Новый проект",address:$("#pjAddr").value.trim(),budget:+$("#pjBudget").value||0};
+    project={...project,name:$("#pjName").value.trim()||"Новый проект",address:$("#pjAddr").value.trim(),budget:+$("#pjBudget").value||0,area:+$("#pjArea").value||0};
     toast("Данные проекта сохранены");saveProject();render();
   }
   if(id==="addForm"){
-    const it={id:newId(),created:Date.now(),room:$("#fRoom").value==="__new"?addRoom($("#fRoomNew").value):$("#fRoom").value,name:$("#fName").value.trim(),brand:$("#fBrand").value.trim()||"—",sku:$("#fSku").value.trim()||"—",sup:$("#fSup").value.trim()||shopName($("#fUrl").value.trim()),url:$("#fUrl").value.trim(),img:pendingImg,qty:Math.max(0,+$("#fQty").value||1),unit:$("#fUnit").value,area:isArea($("#fUnit").value)?+$("#fQty").value||0:0,perPack:isArea($("#fUnit").value)?+$("#fPack").value||0:0,price:+$("#fPrice").value||0,clientPrice:+$("#fCPrice").value||0,bureauPrice:+$("#fBPrice").value||0,delivery:+$("#fDeliv").value||0,sw:SWATCH[items.length%SWATCH.length],st:"pick",comments:[],needClient:$("#fNeed").checked,variants:[],chosen:0,checklist:[],pay:{status:"none",invoice:0,paid:0}};
+    const sec=$("#fSection").value==="__new"?addSection($("#fSectionNew").value):$("#fSection").value;secPick=sec;
+    const it={id:newId(),created:Date.now(),section:sec,dims:$("#fDims").value.trim(),color:$("#fColor").value.trim(),ident:$("#fIdent").value.trim(),note:$("#fNote").value.trim(),room:$("#fRoom").value==="__new"?addRoom($("#fRoomNew").value):$("#fRoom").value,name:$("#fName").value.trim(),brand:$("#fBrand").value.trim()||"—",sku:$("#fSku").value.trim()||"—",sup:$("#fSup").value.trim()||shopName($("#fUrl").value.trim()),url:$("#fUrl").value.trim(),img:pendingImg,qty:Math.max(0,+$("#fQty").value||1),unit:$("#fUnit").value,area:isArea($("#fUnit").value)?+$("#fQty").value||0:0,perPack:isArea($("#fUnit").value)?+$("#fPack").value||0:0,price:+$("#fPrice").value||0,clientPrice:+$("#fCPrice").value||0,bureauPrice:+$("#fBPrice").value||0,delivery:+$("#fDeliv").value||0,sw:SWATCH[items.length%SWATCH.length],st:"pick",comments:[],needClient:$("#fNeed").checked,variants:[],chosen:0,checklist:[],pay:{status:"none",invoice:0,paid:0}};
     recalc(it);allItems.push(it);pendingImg="";e.target.reset();
     if((!it.img||!it.price)&&it.url)fetchPreview(it.url).then(r=>{let ch=false;if(r.img&&!it.img){it.img=r.img;ch=true}if(r.price&&!it.price){it.price=r.price;ch=true}if(ch){save(it);render()}});e.target.hidden=true;
     toast("Позиция добавлена в подбор");save(it);render();
