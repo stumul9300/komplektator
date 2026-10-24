@@ -50,6 +50,7 @@ header{background:var(--surface);border-bottom:1px solid var(--line)}
 .tour-card .tnav{display:flex;gap:8px;align-items:center}
 .tour-card .tnav span{color:var(--muted);font-size:13px;margin-right:auto}
 .tour-card::before{content:"";position:absolute;width:14px;height:14px;background:var(--surface);transform:rotate(45deg);left:var(--ax,24px)}
+.tour-menu{position:fixed;inset:0;z-index:92;background:rgba(10,16,13,.55);display:flex;align-items:center;justify-content:center;padding:16px}
 .tour-card.below::before{top:-7px}.tour-card.above::before{bottom:-7px}.tour-card.center::before{display:none}
 .roles span{font-size:12px;color:var(--muted)}
 .seg{display:flex;background:var(--sunk);border-radius:10px;padding:3px;gap:2px}
@@ -713,41 +714,150 @@ const TOUR={
     {sel:"form[data-ans] button",t:"Нажмите «Отправить ответ». Комплектатор сразу увидит его. Ответ можно потом обновить."}
   ]
 };
-let tourI=-1,tourSteps=[];
+// Разборы по сценариям: «Как пользоваться» открывает список, каждый сценарий — пошаговый показ.
+// Шаг: sel — что подсветить, tab — открыть вкладку, open — открыть карточку позиции, prep/cleanup — подготовить экран.
+const firstItem=f=>items.find(f||(()=>true));
+const openFirst=f=>()=>{const i=firstItem(f)||items[0];if(i&&openId!==i.id){openId=i.id;render()}};
+const selFirst=()=>{const i=items[0];if(i&&!selIds.size){selIds.add(i.id);render()}};
+const SCN={
+  kompl:[
+    {id:"tour",title:"Обзор сайта за минуту",steps:TOUR.kompl},
+    {id:"sup",title:"Отправить запрос менеджеру поставщика",cleanup:()=>{selIds.clear();supFormOpen=false},steps:[
+      {t:"Сценарий: узнать у поставщика (например, «Сантехлидер») наличие и цены сразу по нескольким позициям, без переписки по каждой."},
+      {sel:".rowsel",tab:"spec",t:"Шаг 1. На вкладке «Спецификация» отметьте галками позиции для этого поставщика — например, всю сантехнику."},
+      {sel:"#supReq",tab:"spec",prep:selFirst,t:"Шаг 2. Сверху появится кнопка «Запрос поставщику (N)». Нажмите её."},
+      {sel:"#supName",tab:"spec",prep:()=>{selFirst();supFormOpen=true;render()},t:"Шаг 3. Впишите название поставщика. В «Сообщении поставщику» можно указать сроки или «рассмотрим аналоги»."},
+      {sel:"#supForm button[type=submit]",tab:"spec",t:"Шаг 4. Нажмите «Создать ссылку для поставщика». Ссылка сразу скопируется."},
+      {sel:".reqlink",tab:"spec",miss:"Блок «Запросы поставщикам» появится после первого запроса.",prep:()=>{selIds.clear();supFormOpen=false;render();const d=$("#main details");if(d&&/Запросы поставщикам/.test(d.textContent))d.open=true},t:"Шаг 5. Все запросы хранятся в блоке «Запросы поставщикам»: там ссылка, кнопка «Копировать ссылку» и сколько позиций уже с ответом. Вставьте ссылку в WhatsApp, Telegram или письмо менеджеру."},
+      {t:"Что видит менеджер: только эти позиции — фото, название, количество, габариты, цвет и ссылку. Цены для клиента, цену для бюро, бюджет и другие позиции он не видит. По каждой он выбирает «есть / под заказ / нет — предлагаю замену», пишет цену, срок и комментарий и нажимает «Отправить ответ»."},
+      {sel:"tbody .tri",tab:"spec",t:"Шаг 6. Следите за значком «П» у позиции: жёлтый «…» — ждём ответа, синий «✉» — поставщик ответил, зелёный «✓» — вы приняли цену или замену."},
+      {sel:"aside.drawer .ansbox,aside.drawer h3",tab:"spec",open:i=>reqsOf(i).length>0,t:"Шаг 7. Откройте позицию. В блоке «Ответы поставщиков»: «Взять эту цену» — подставит цену и поставщика; «Добавить замену как вариант» — замена попадёт в варианты, и её сможет выбрать дизайнер или заказчик."}]},
+    {id:"excel",title:"Загрузить смету из Excel или Google-таблицы",steps:[
+      {t:"Подойдёт ваша обычная смета: колонки «Наименование», «Габариты», «Ед. изм.», «Цена», «Кол-во», «Цвет», «Идентификатор», «Ссылка», «Статус». Строки без цены и количества — это разделы (Отопление, Двери…) и помещения. Строки «Итого» сайт пропускает."},
+      {sel:"#projSel",t:"Шаг 1. Выберите объект, в который загружаете смету, или создайте новый."},
+      {sel:"#importXls",tab:"spec",t:"Шаг 2. «Загрузить из Excel» → выберите файл .xlsx. Сайт напишет, сколько позиций и разделов нашёл, — нажмите «ОК»."},
+      {sel:"#importSheet",tab:"spec",t:"Или «Из Google-таблицы»: вставьте ссылку. В Google нажмите «Настройки доступа» → «Все, у кого есть ссылка». Если не получится — «Файл → Скачать → Excel» и загрузите файлом."},
+      {sel:"tr.sechead,tbody tr",tab:"spec",t:"Шаг 3. Позиции разложатся по разделам и помещениям, с номерами 1.1, 1.2 и «Итого по разделу». «Заказано» из таблицы станет статусом «Заказано». Фото по ссылкам подтягиваются при открытии позиции."},
+      {sel:"#exportXls",tab:"spec",t:"Шаг 4. «Скачать Excel» — выгрузка обратно в той же форме, плюс колонка «Согласование»."}]},
+    {id:"approve",title:"Отправить позиции дизайнеру и заказчику",cleanup:()=>selIds.clear(),steps:[
+      {t:"Путь позиции: вы подбираете → дизайнер согласует → заказчик согласует (основное согласование) → утверждено → вы заказываете → доставлено."},
+      {sel:"#selAllPick,.rowsel",tab:"spec",t:"Шаг 1. Отметьте готовые позиции галками или нажмите «Выбрать все в подборе»."},
+      {sel:"#bulkSend",tab:"spec",prep:()=>{const i=items.find(x=>x.st==="pick");if(i&&!selIds.size){selIds.add(i.id);render()}},t:"Шаг 2. «Отправить дизайнеру (N)». У дизайнера они появятся в «Мои задачи»."},
+      {sel:"#needClient",tab:"spec",open:i=>i.st==="pick",t:"В карточке позиции галка «Согласовать с заказчиком» включена по умолчанию. Снимите её — и после дизайнера позиция сразу станет утверждённой, без заказчика."},
+      {sel:"#roleSeg",t:"Шаг 3. Отправьте дизайнеру и заказчику ссылку на сайт: они нажимают свою роль. Чтобы проверить, что они видят, переключите роль здесь."},
+      {sel:"tbody .tri",tab:"spec",t:"Шаг 4. Следите за значками: К — вы, Д — дизайнер, З — заказчик. ✓ — согласовал, … — ждёт, ✕ — вернул на замену (причина будет в обсуждении)."},
+      {sel:"[data-tab=inbox]",t:"Шаг 5. Утверждённые позиции появятся в ваших «Моих задачах» с кнопкой «Оформить заказ». Вернутые — с пометкой «заменить»."}]},
+    {id:"variants",title:"Предложить несколько вариантов на выбор",steps:[
+      {sel:"#varForm,#vName",tab:"spec",open:i=>i.st==="pick",t:"Откройте позицию в подборе. В блоке «Добавить вариант» впишите название, бренд, цену и ссылку — и нажмите «Добавить». Так можно добавить 2–3 варианта."},
+      {t:"Заказчик увидит кнопку «Смотреть варианты», выберет один и согласует. Выбранный вариант станет основным: его название, цена и фото заменят исходные."}]},
+    {id:"prices",title:"Цены: для клиента, для бюро, доставка",steps:[
+      {sel:"#itemPrice",tab:"spec",open:true,t:"«Цена за ед.» — цена магазина. Подтягивается сама по ссылке, если сайт магазина её отдаёт."},
+      {sel:"#itemCPrice",tab:"spec",open:true,t:"«Цена для клиента» — если точной цены нет или нужно назвать другую. Заказчик увидит её вместо цены магазина."},
+      {sel:"#itemBPrice",tab:"spec",open:true,t:"«Цена для бюро» — ваша закупочная. Заказчик её не видит никогда. Дизайнер видит."},
+      {sel:"#itemDeliv",tab:"spec",open:true,t:"«Доставка» — за всю позицию. Добавляется к сумме позиции и к итогам."},
+      {sel:"tfoot",tab:"spec",t:"Итоги внизу таблицы и по каждому разделу. Если в «Данных проекта» указана площадь — рядом будет стоимость за м²."}]},
+    {id:"tile",title:"Плитка и всё, что считается в м²",steps:[
+      {sel:"#itemUnit",tab:"spec",open:i=>i.unit==="м²"||/плитк|керамогр/i.test(i.name),t:"В карточке позиции выберите единицу «м²» (или «пог. м»)."},
+      {sel:"#itemQty",tab:"spec",open:i=>i.unit==="м²"||/плитк|керамогр/i.test(i.name),t:"Впишите, сколько метров нужно по проекту."},
+      {sel:"#itemPack",tab:"spec",open:i=>i.unit==="м²"||/плитк|керамогр/i.test(i.name),miss:"Поле «В коробке» появится, когда выберете единицу «м²».",t:"Впишите, сколько м² в одной коробке (есть на странице товара). Сайт сам посчитает число коробок и округлит вверх, а сумму — по целым коробкам."},
+      {t:"Если в названии есть «плитка» или «керамогранит», а единица «шт», сайт подскажет «Считать в м² и коробках» — одна кнопка всё переключит."}]},
+    {id:"photo",title:"Фото товара",steps:[
+      {sel:"#fUrl,#addToggle",tab:"spec",prep:()=>{const f=$("#addForm");if(f)f.hidden=false},t:"При добавлении позиции вставьте ссылку на товар — фото, название и цена подтянутся сами."},
+      {sel:".swup",tab:"spec",open:true,t:"Если фото не подтянулось: нажмите на квадрат в шапке карточки и выберите файл. Или скопируйте картинку в магазине (правой кнопкой → «Копировать изображение») и нажмите Ctrl+V прямо на сайте."}]},
+    {id:"rooms",title:"Помещения и разделы",steps:[
+      {sel:"td .roomsel",tab:"spec",t:"Помещение меняется прямо в таблице — выпадающий список в строке. Внизу списка — «＋ Другое помещение…», чтобы добавить своё."},
+      {sel:".chips",tab:"spec",t:"Фильтр сверху показывает позиции одного помещения. «Все» — весь список."},
+      {sel:"#itemSection",tab:"spec",open:true,t:"Раздел (Отопление, Двери, Сантехника, Освещение…) выбирается в карточке позиции, в блоке «Как в смете». Там же габариты, цвет, идентификатор и дополнение."}]},
+    {id:"viz",title:"Визуализация: душ на фоне плитки",steps:[
+      {sel:"[data-tab=viz]",tab:"viz",t:"Откройте вкладку «Визуализации»."},
+      {sel:"#colNew",tab:"viz",t:"«Сочетания» → «Новое сочетание». Отметьте плитку как фон и товар, который нужно наложить, например душ."},
+      {t:"ИИ сам уберёт фон у товара (первый раз — до минуты, пока загружается модель). Товар можно двигать и менять размер, плитку — масштабировать. Нажмите «Сохранить»: сочетание увидят дизайнер и заказчик."},
+      {sel:"#vzFile,#vizForm",tab:"viz",t:"Ниже — «Визуализации с метками»: загрузите рендер, нажмите на место на картинке и выберите позицию. Метка с номером будет вести на эту позицию."}]},
+    {id:"pay",title:"Счета и оплаты",steps:[
+      {sel:"#payStatus",tab:"spec",open:true,t:"В карточке позиции — блок «Счёт и оплата»: статус (нет счёта, выставлен, оплачен частично, оплачен), сумма счёта и сколько оплачено."},
+      {sel:"[data-tab=payments]",tab:"payments",t:"Вкладка «Счета и оплаты» собирает всё вместе: сколько выставлено, оплачено и осталось."}]},
+    {id:"delivery",title:"Заказ и поставки",steps:[
+      {sel:"[data-tab=inbox]",tab:"inbox",t:"Утверждённые позиции появляются в «Моих задачах» с кнопкой «Оформить заказ»."},
+      {sel:"#etaInput",tab:"spec",open:true,prep:()=>{const i=items.find(x=>x.st==="ord");if(i){openId=i.id;render()}},t:"У заказанной позиции укажите дату поставки. Когда привезли — «Отметить доставку»."},
+      {sel:"[data-tab=delivery]",tab:"delivery",t:"Вкладка «Поставки» — календарь: что и когда приедет, от какого поставщика."}]},
+    {id:"checklist",title:"Чек-лист и обсуждение позиции",steps:[
+      {sel:"#clTpl,#clText",tab:"spec",open:true,t:"Чек-лист в карточке: добавьте свои пункты или типовые — КП, счёт, оплата, отгрузка. Отмечайте галками по ходу."},
+      {sel:"#cText",tab:"spec",open:true,t:"Обсуждение: комментарии видят все участники, с именем роли и временем."}]},
+    {id:"access",title:"Что видят дизайнер и заказчик",steps:[
+      {sel:".projset",tab:"overview",prep:()=>{document.querySelectorAll(".projset").forEach(d=>{if(/Что видят/.test(d.textContent))d.open=true})},t:"На «Обзоре» блок «Что видят дизайнер и заказчик»: галками решаете, показывать ли им цены, чек-листы, счета и поставки."},
+      {sel:"#showClient",tab:"spec",open:true,t:"Отдельную позицию можно скрыть от заказчика — снимите «Показывать заказчику» в карточке."}]},
+    {id:"project",title:"Новый объект и данные проекта",steps:[
+      {sel:"#projSel",t:"Откройте список объектов и выберите «＋ Новый объект…». Введите название, затем (по желанию) ссылку на Google-таблицу со сметой — она загрузится сама."},
+      {sel:"#pjName",tab:"overview",prep:()=>{const d=$("#projForm")?.closest("details");if(d)d.open=true},t:"На «Обзоре» в «Данных проекта» — название, адрес, бюджет и площадь. Площадь нужна для «стоимости за м²»."}]},
+    {id:"trash",title:"Удалить и вернуть позицию",steps:[
+      {sel:"#delBtn",tab:"spec",open:true,t:"Внизу карточки — «Удалить позицию» (нажать два раза). Позиция не пропадает навсегда, а уходит в корзину."},
+      {sel:"#main details:last-of-type",tab:"spec",miss:"Корзина появится, когда вы удалите хотя бы одну позицию.",t:"«Корзина» — под таблицей спецификации. Оттуда позицию можно вернуть кнопкой «Вернуть»."}]}
+  ],
+  designer:[
+    {id:"tour",title:"Обзор сайта",steps:TOUR.designer},
+    {id:"agree",title:"Как согласовать позицию",steps:[
+      {sel:"[data-tab=inbox]",tab:"inbox",t:"Откройте «Мои задачи» — там позиции от комплектатора."},
+      {sel:"#main [data-open]",tab:"inbox",t:"Нажмите на позицию: фото, ссылка, цены, варианты."},
+      {sel:"aside.drawer [data-move]",tab:"inbox",open:i=>i.st==="des",t:"«Согласовать» — позиция уйдёт заказчику. «Вернуть» — комплектатор подберёт замену; причину напишите в обсуждении ниже."},
+      {sel:"#cText",tab:"inbox",open:i=>i.st==="des",t:"Комментарий увидят все участники."}]}
+  ],
+  client:[
+    {id:"tour",title:"Обзор сайта",steps:TOUR.client},
+    {id:"agree",title:"Как согласовать или выбрать вариант",steps:[
+      {sel:"[data-tab=inbox]",tab:"inbox",t:"«Мои задачи» — позиции, которые ждут вашего решения."},
+      {sel:"#main [data-move],#main .btn[data-open]",tab:"inbox",t:"Один вариант — «Согласовать» или «Не подходит». Несколько — «Смотреть варианты»."},
+      {sel:"aside.drawer .vars,aside.drawer [data-move]",tab:"inbox",open:i=>i.st==="cli",t:"В карточке выберите вариант и нажмите «Согласовать». Вопрос можно задать в обсуждении внизу."}]}
+  ],
+  supplier:[{id:"tour",title:"Как ответить на запрос",steps:TOUR.supplier}]
+};
+let tourI=-1,tourSteps=[],tourScn=null;
 const tourRole=()=>SUP_TOKEN?"supplier":role;
-function tourStart(){tourSteps=TOUR[tourRole()]||[];tourI=-1;tourGo(1)}
-function tourEnd(){tourI=-1;document.querySelectorAll(".tour-spot,.tour-card").forEach(e=>e.remove());try{localStorage.setItem("k-tour-"+tourRole(),"1")}catch(e){}}
+function tourStart(id){const list=SCN[tourRole()]||[];tourScn=list.find(x=>x.id===(id||"tour"))||list[0];tourSteps=tourScn?.steps||[];tourI=-1;$(".tour-menu")?.remove();tourGo(1)}
+function tourMenu(){
+  tourEnd(true);const list=SCN[tourRole()]||[];
+  const m=document.createElement("div");m.className="tour-menu";m.setAttribute("role","dialog");m.setAttribute("aria-label","Как пользоваться");
+  m.innerHTML=`<div class="tour-card center" style="position:relative;left:auto;top:auto;width:min(440px,calc(100vw - 32px));max-height:calc(100vh - 40px);overflow:auto"><button class="close" data-tour="end" aria-label="Закрыть" style="position:absolute;top:6px;right:8px">×</button><h3 style="margin:0 0 4px">Как пользоваться</h3><p class="m" style="margin:0 0 12px">Выберите, что хотите сделать, — покажу по шагам прямо на сайте.</p><div class="list">${list.map(x=>`<button class="btn" data-scn="${x.id}" style="width:100%;justify-content:flex-start;text-align:left;margin-bottom:6px">${esc(x.title)}</button>`).join("")}</div></div>`;
+  document.body.appendChild(m);
+}
+function tourEnd(quiet){
+  const had=tourI>=0;tourI=-1;document.querySelectorAll(".tour-spot,.tour-card,.tour-menu").forEach(e=>e.remove());
+  try{localStorage.setItem("k-tour-"+tourRole(),"1")}catch(e){}
+  if(had&&tourScn?.cleanup){tourScn.cleanup();if(!quiet)render()}
+  if(had&&openId&&!quiet){openId=null;render()}
+}
 function tourVisible(el){if(!el)return false;const r=el.getBoundingClientRect();return r.width>0&&r.height>0}
 function tourGo(dir){
-  let i=tourI;
-  for(;;){i+=dir;if(i<0||i>=tourSteps.length){tourEnd();return}
-    const st=tourSteps[i];
-    if(st.tab&&!SUP_TOKEN&&tab!==st.tab){tab=st.tab;openId=null;render()}
-    if(!st.sel||tourVisible(document.querySelector(st.sel)))break}
-  tourI=i;tourShow();
+  const i=tourI+dir;if(i<0||i>=tourSteps.length){tourEnd();return}
+  tourI=i;const st=tourSteps[i];
+  if(!SUP_TOKEN){
+    if(st.tab&&tab!==st.tab){tab=st.tab;render()}
+    if(st.open){openFirst(typeof st.open==="function"?st.open:null)()}else if(openId&&!st.prep){openId=null;render()}
+    if(st.prep)st.prep();
+  }
+  setTimeout(tourShow,st.open||st.prep?240:0);
 }
 function tourShow(){
   const st=tourSteps[tourI];if(!st)return;
-  let spot=$(".tour-spot"),card=$(".tour-card");
+  let spot=$(".tour-spot"),card=$(".tour-card:not(.tour-menu .tour-card)");
   if(!spot){spot=document.createElement("div");spot.className="tour-spot";document.body.appendChild(spot)}
   if(!card){card=document.createElement("div");card.className="tour-card";card.setAttribute("role","dialog");document.body.appendChild(card)}
-  const last=tourI===tourSteps.length-1||tourSteps.slice(tourI+1).every(x=>x.sel&&!tourVisible(document.querySelector(x.sel))&&!x.tab);
-  card.innerHTML=`<p>${esc(st.t)}</p><div class="tnav"><span>${tourI+1} из ${tourSteps.length}</span>${tourI>0?`<button class="btn" data-tour="-1">Назад</button>`:""}<button class="btn pri" data-tour="${last?"end":"1"}">${last?"Понятно":"Далее"}</button></div><button class="close" data-tour="end" aria-label="Закрыть подсказки" style="position:absolute;top:6px;right:8px">×</button>`;
-  const el=st.sel&&document.querySelector(st.sel);
-  if(!el){spot.style.cssText="left:50%;top:40%;width:0;height:0";card.className="tour-card center";card.style.left=`calc(50% - ${card.offsetWidth/2}px)`;card.style.top="30%";return}
+  const last=tourI===tourSteps.length-1;
+  const el=st.sel&&[...document.querySelectorAll(st.sel)].find(tourVisible);
+  card.innerHTML=`${tourScn&&tourScn.id!=="tour"?`<div class="m" style="font-size:12px;margin-bottom:6px">${esc(tourScn.title)}</div>`:""}<p>${esc(st.t)}</p>${st.sel&&!el?`<p class="m" style="font-size:13px">${esc(st.miss||"Сейчас этой кнопки на экране нет — она появится, когда в объекте будут подходящие позиции.")}</p>`:""}<div class="tnav"><span>${tourI+1} из ${tourSteps.length}</span>${tourI>0?`<button class="btn" data-tour="-1">Назад</button>`:""}<button class="btn pri" data-tour="${last?"end":"1"}">${last?"Понятно":"Далее"}</button></div><div style="margin-top:8px"><button class="btn link" data-tour="menu">Другие подсказки</button></div><button class="close" data-tour="end" aria-label="Закрыть подсказки" style="position:absolute;top:6px;right:8px">×</button>`;
+  if(!el){spot.style.cssText="left:50%;top:40%;width:0;height:0";card.className="tour-card center";card.style.left=`calc(50% - ${card.offsetWidth/2}px)`;card.style.top=`calc(50% - ${card.offsetHeight/2}px)`;return}
   el.scrollIntoView({block:"center",behavior:"instant"});
   const r=el.getBoundingClientRect(),pad=6,W=innerWidth,H=innerHeight;
-  spot.style.cssText=`left:${r.left-pad}px;top:${r.top-pad}px;width:${r.width+pad*2}px;height:${r.height+pad*2}px`;
-  const cw=card.offsetWidth,ch=card.offsetHeight;
-  const below=r.bottom+pad+14+ch<H||r.top<ch+30;
+  spot.style.cssText=`left:${r.left-pad}px;top:${r.top-pad}px;width:${r.width+pad*2}px;height:${Math.min(r.height+pad*2,H*.6)}px`;
+  const cw=card.offsetWidth,ch=card.offsetHeight,bot=Math.min(r.bottom,r.top+H*.6);
+  const below=bot+pad+14+ch<H||r.top<ch+30;
   let x=Math.min(Math.max(16,r.left+r.width/2-cw/2),W-cw-16);
   card.className="tour-card "+(below?"below":"above");
-  card.style.left=x+"px";card.style.top=(below?r.bottom+pad+12:r.top-pad-12-ch)+"px";
+  card.style.left=x+"px";card.style.top=Math.max(8,Math.min(H-ch-8,below?bot+pad+12:r.top-pad-12-ch))+"px";
   card.style.setProperty("--ax",Math.min(Math.max(14,r.left+r.width/2-x-7),cw-28)+"px");
 }
 addEventListener("resize",()=>{if(tourI>=0)tourShow()});
 addEventListener("scroll",()=>{if(tourI>=0)tourShow()},{passive:true});
-function tourAuto(){if(tourI>=0||!loaded)return;let seen=false;try{seen=!!localStorage.getItem("k-tour-"+tourRole())}catch(e){seen=true}if(!seen)setTimeout(()=>{if(tourI<0)tourStart()},400)}
+function tourAuto(){if(tourI>=0||!loaded||$(".tour-menu"))return;let seen=false;try{seen=!!localStorage.getItem("k-tour-"+tourRole())}catch(e){seen=true}if(!seen)setTimeout(()=>{if(tourI<0)tourStart()},400)}
 // ---------- Объекты ----------
 const STARTERS=[{id:"proj-souz",name:"Союз",sheet:"https://docs.google.com/spreadsheets/d/1m-GDiWp3xrqhlc_CY3O-f0hZlhulMafC3godvNxGJ-8/edit"},{id:"proj-ostrov",name:"Остров",sheet:"https://docs.google.com/spreadsheets/d/104jxGbnEHn03f1sd2cwTK9lxW5GMxn3PdfT8g7qZnr0/edit#gid=0"}];
 let startersTried=false;
@@ -1068,7 +1178,8 @@ function render(){
 // ---------- события ----------
 document.addEventListener("click",e=>{
   const tb=e.target.closest("[data-tour],.tourbtn");
-  if(tb){if(tb.classList.contains("tourbtn"))tourStart();else if(tb.dataset.tour==="end")tourEnd();else tourGo(+tb.dataset.tour);return}
+  const sc=e.target.closest("[data-scn]");if(sc){tourStart(sc.dataset.scn);return}
+  if(tb){if(tb.classList.contains("tourbtn"))tourMenu();else if(tb.dataset.tour==="end")tourEnd();else if(tb.dataset.tour==="menu")tourMenu();else tourGo(+tb.dataset.tour);return}
   const vimg=e.target.closest(".vizimg.picking");
   if(vimg&&!e.target.closest(".pin")){const r=vimg.querySelector("img").getBoundingClientRect();pendingPin={vid:vimg.dataset.viz,x:+((e.clientX-r.left)/r.width*100).toFixed(2),y:+((e.clientY-r.top)/r.height*100).toFixed(2)};render();return}
   const cb=e.target.closest("#colNew,#colSave,#colCancel,#colFront,#colRecut,[data-colbg],[data-coledit],[data-coldel]");
