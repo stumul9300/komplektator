@@ -148,6 +148,16 @@ table.vis tbody tr{cursor:default}table.vis input{width:18px;height:18px;accent-
 .swhint{position:absolute;inset:auto 0 0 0;font-size:10px;text-align:center;background:rgba(0,0,0,.45);color:#fff;padding:2px 0;opacity:0;transition:opacity .15s;pointer-events:none}
 .swup:hover .swhint,.swup:focus-within .swhint{opacity:1}
 .swup:hover{outline:2px solid var(--accent);outline-offset:1px}
+.vizcard{margin-bottom:16px;display:flex;flex-direction:column;gap:10px}
+.vizhead{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
+.vizimg{position:relative;border-radius:10px;overflow:hidden;background:var(--sunk);user-select:none}
+.vizimg img{display:block;width:100%;height:auto}
+.vizimg.picking{cursor:crosshair;outline:2px dashed var(--accent);outline-offset:2px}
+.pin{position:absolute;transform:translate(-50%,-50%);width:28px;height:28px;border-radius:50%;border:2px solid #fff;background:var(--accent);color:var(--accent-fg);font-weight:600;font-size:13px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.35);padding:0}
+.pin:hover{transform:translate(-50%,-50%) scale(1.15)}
+.pin.pending{background:var(--brass);pointer-events:none}
+.pin.static{position:static;transform:none;flex:none;box-shadow:none}
+.pinpick{display:flex;gap:8px;flex-wrap:wrap}.pinpick select{flex:1;min-width:0;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:8px 10px}
 .filebtn{position:relative;overflow:hidden}.filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer}
 .timeline .row .date{font-family:var(--f-mono);font-size:13px;width:92px;flex:none}
 @media (max-width:560px){.brand h1{font-size:20px}.big{font-size:26px}}
@@ -226,6 +236,10 @@ const imgOk=u=>/^(https?:\/\/|data:image\/)/i.test(u||"");
 const cssUrl=u=>esc(String(u).replace(/["'()\\\s]/g,c=>encodeURIComponent(c)));
 const swStyle=o=>`background-color:${esc(o.sw||"#C8CEC6")}`+(imgOk(o.img)?`;background-image:url(&quot;${cssUrl(o.img)}&quot;)`:"");
 let pendingImg="";
+// Визуализации: рендеры помещений с метками-позициями (хранятся в таблице project, id начинается с viz-)
+let vizList=[],pinMode=null,pendingPin=null,confirmViz=null;
+async function saveViz(v){if(!sb){render();return}const {id,...data}=v;const {error}=await sb.from("project").upsert({id,data});if(error)handleWriteError(error)}
+async function deleteViz(id){vizList=vizList.filter(v=>v.id!==id);render();if(!sb)return;const {error}=await sb.from("project").delete().eq("id",id);if(error)handleWriteError(error)}
 function setPrev(el,img){el.style.backgroundImage=`url("${String(img).replace(/["\\\s]/g,c=>encodeURIComponent(c))}")`;el.textContent=""}
 // Картинка по ссылке на товар: прямая ссылка на изображение или превью страницы через microlink.io
 function toNum(v){if(v==null)return 0;const n=parseFloat(String(v).replace(/[\s\u00a0\u202f]/g,"").replace(",",".").replace(/[^\d.]/g,""));return isFinite(n)?n:0}
@@ -280,7 +294,7 @@ async function fetchPreview(url){
   if(!out.img)out.img=await shopGuess(url);
   return out;
 }
-function fileToDataUrl(file){return new Promise((res,rej)=>{const img=new Image();img.onload=()=>{const k=Math.min(1,480/Math.max(img.width,img.height));const c=document.createElement("canvas");c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);c.getContext("2d").drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(img.src);res(c.toDataURL("image/jpeg",.8))};img.onerror=rej;img.src=URL.createObjectURL(file)})}
+function fileToDataUrl(file,max=480){return new Promise((res,rej)=>{const img=new Image();img.onload=()=>{const k=Math.min(1,max/Math.max(img.width,img.height));const c=document.createElement("canvas");c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);c.getContext("2d").drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(img.src);res(c.toDataURL("image/jpeg",.8))};img.onerror=rej;img.src=URL.createObjectURL(file)})}
 
 function toast(t){const el=$("#toast");el.textContent=t;el.hidden=false;clearTimeout(toast.h);toast.h=setTimeout(()=>el.hidden=true,2600)}
 
@@ -307,10 +321,11 @@ async function removeItem(id){if(!sb)return;const {error}=await sb.from("items")
 function handleWriteError(e){console.error(e);toast("Не удалось сохранить. Проверьте интернет и попробуйте ещё раз.");render()}
 function newId(){return "p"+Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
 async function loadAll(){
-  const [a,b]=await Promise.all([sb.from("items").select("*").order("created"),sb.from("project").select("*").eq("id","main")]);
+  const [a,b]=await Promise.all([sb.from("items").select("*").order("created"),sb.from("project").select("*")]);
   if(a.error){offline=true;loaded=true;toast("Нет связи с базой данных");render();return}
   allItems=a.data.map(r=>({id:r.id,...r.data}));
-  if(b.data&&b.data[0])project={...project,...b.data[0].data};
+  const rows=b.data||[];const main=rows.find(r=>r.id==="main");if(main)project={...project,...main.data};
+  vizList=rows.filter(r=>r.id.startsWith("viz-")).map(r=>({id:r.id,...r.data})).sort((x,y)=>(x.created||0)-(y.created||0));
   loaded=true;render();
 }
 let reloadT;
@@ -357,7 +372,7 @@ function renderHeader(){
   $("#roleSeg").innerHTML=Object.entries(ROLES).map(([k,v])=>`<button data-role="${k}" aria-pressed="${k===role}">${v.name}</button>`).join("");
   items=role==="client"?allItems.filter(i=>!i.hideClient):allItems;
   const n=mine().length;
-  const T=[["overview","Обзор"],["spec","Спецификация"],["inbox","Мои задачи",n]];
+  const T=[["overview","Обзор"],["spec","Спецификация"],["viz","Визуализации"],["inbox","Мои задачи",n]];
   if(can("payments"))T.push(["payments","Счета и оплаты"]);
   if(can("delivery"))T.push(["delivery","Поставки"]);
   if(!T.some(t=>t[0]===tab))tab="overview";
@@ -412,6 +427,27 @@ function accessPanel(){
   <div class="tablebox" style="border:0"><table class="vis" style="min-width:0"><thead><tr><th>Раздел</th><th>Дизайнер</th><th>Заказчик</th></tr></thead><tbody>
   ${VIS_FEATURES.map(([f,t])=>`<tr><td>${t}</td>${["designer","client"].map(r=>`<td><input type="checkbox" class="visbox" id="vis-${r}-${f}" data-vis="${r}:${f}" ${v[r]?.[f]?"checked":""} aria-label="${t}: ${ROLES[r].name}"></td>`).join("")}</tr>`).join("")}
   </tbody></table></div></details>`;
+}
+function viz(){
+  const canEdit=!readOnly&&(role==="kompl"||role==="designer");
+  const upload=canEdit?`<form class="add panel" id="vizForm"><label class="field">Название<input id="vzTitle" placeholder="Например, душевая зона" required></label><label class="field">Помещение<select id="vzRoom">${ROOMS.map(r=>`<option>${r}</option>`).join("")}</select></label><div class="field">Картинка<span class="btn filebtn">Выбрать файл<input type="file" id="vzFile" accept="image/*"></span></div><div class="field" style="justify-content:flex-end"><button class="btn pri" type="submit" id="vzSubmit" disabled>Добавить визуализацию</button></div></form>`:"";
+  if(!vizList.length)return upload+`<div class="panel empty-state"><h2>Визуализаций пока нет</h2><p class="note">${canEdit?"Загрузите рендер помещения, затем нажмите «Поставить метку» и кликните по нужному месту на картинке, например по плитке в душе. Заказчик сможет нажать на метку и увидеть позицию.":"Когда дизайнер или комплектатор загрузит визуализации, они появятся здесь."}</p></div>`;
+  return upload+vizList.map(v=>{
+    const pins=(v.pins||[]).map((p,k)=>({...p,k,it:items.find(i=>i.id===p.itemId)})).filter(p=>p.it);
+    const picking=pinMode===v.id;
+    const pp=pendingPin&&pendingPin.vid===v.id?pendingPin:null;
+    const opts=[...items].sort((a,b)=>(b.room===v.room)-(a.room===v.room)).map(i=>`<option value="${i.id}">${esc(i.room)} · ${esc(i.name)}</option>`).join("");
+    return `<section class="panel vizcard">
+      <div class="vizhead"><div><h2 style="margin:0">${esc(v.title)}</h2><div class="m" style="color:var(--muted)">${esc(v.room)} · меток: ${pins.length}</div></div>
+      ${canEdit?`<div class="actions"><button class="btn${picking?" pri":""}" data-pinmode="${v.id}">${picking?"Готово":"Поставить метку"}</button><button class="btn bad" data-delviz="${v.id}">${confirmViz===v.id?"Точно удалить?":"Удалить"}</button></div>`:""}</div>
+      ${picking?`<p class="note" style="margin:8px 0">Кликните по месту на картинке, где стоит позиция.</p>`:""}
+      <div class="vizimg${picking?" picking":""}" data-viz="${v.id}"><img src="${esc(v.img)}" alt="${esc(v.title)}" draggable="false">
+        ${pins.map(p=>`<button class="pin" style="left:${p.x}%;top:${p.y}%" data-open="${p.it.id}" title="${esc(p.it.name)}">${p.k+1}</button>`).join("")}
+        ${pp?`<span class="pin pending" style="left:${pp.x}%;top:${pp.y}%">+</span>`:""}
+      </div>
+      ${pp?`<div class="pinpick"><select id="pinItem">${opts}</select><button class="btn pri" id="pinSave">Поставить</button><button class="btn" id="pinCancel">Отмена</button></div>`:""}
+      ${pins.length?`<div class="list" style="margin-top:10px">${pins.map(p=>`<div class="row"><span class="pin static">${p.k+1}</span><div class="sw" style="${swStyle(p.it)}"></div><div class="grow" data-open="${p.it.id}" style="cursor:pointer"><div class="t">${esc(p.it.name)}</div><div class="m">${esc(p.it.room)} · <span class="money">${rub(sum(p.it))}</span></div></div>${pill(p.it.st)}${canEdit?`<button class="btn" data-unpin="${v.id}:${p.k}" title="Убрать метку" aria-label="Убрать метку">×</button>`:""}</div>`).join("")}</div>`:""}
+    </section>`}).join("");
 }
 function payments(){
   const list=items.filter(i=>["ok","ord","del"].includes(i.st)||payOf(i).status!=="none");
@@ -538,8 +574,8 @@ function render(){
   renderHeader();
   const focusId=document.activeElement?.id;
   const addOpen=$("#addForm")&&!$("#addForm").hidden;
-  const formVals={};document.querySelectorAll("#main input,#main select").forEach(el=>{if(el.id)formVals[el.id]=el.type==="checkbox"?el.checked:el.value});
-  $("#main").innerHTML=!loaded?`<div class="empty">Загружаю данные проекта…</div>`:(offline?`<p class="note warn">База данных не подключена: изменения пропадут после перезагрузки страницы.</p>`:"")+({overview,spec,inbox,delivery,payments}[tab])();
+  const formVals={};document.querySelectorAll("#main input,#main select").forEach(el=>{if(el.id&&el.type!=="file")formVals[el.id]=el.type==="checkbox"?el.checked:el.value});
+  $("#main").innerHTML=!loaded?`<div class="empty">Загружаю данные проекта…</div>`:(offline?`<p class="note warn">База данных не подключена: изменения пропадут после перезагрузки страницы.</p>`:"")+({overview,spec,inbox,delivery,payments,viz}[tab])();
   if(addOpen&&$("#addForm"))$("#addForm").hidden=false;
   for(const[k,v]of Object.entries(formVals)){const el=document.getElementById(k);if(el&&$("#main").contains(el)){if(el.type==="checkbox")el.checked=v;else el.value=v}}
   renderDrawer();
@@ -548,6 +584,17 @@ function render(){
 
 // ---------- события ----------
 document.addEventListener("click",e=>{
+  const vimg=e.target.closest(".vizimg.picking");
+  if(vimg&&!e.target.closest(".pin")){const r=vimg.querySelector("img").getBoundingClientRect();pendingPin={vid:vimg.dataset.viz,x:+((e.clientX-r.left)/r.width*100).toFixed(2),y:+((e.clientY-r.top)/r.height*100).toFixed(2)};render();return}
+  const vb=e.target.closest("[data-pinmode],[data-delviz],[data-unpin],#pinSave,#pinCancel");
+  if(vb){
+    if(vb.dataset.pinmode){pinMode=pinMode===vb.dataset.pinmode?null:vb.dataset.pinmode;pendingPin=null}
+    else if(vb.dataset.delviz){if(confirmViz===vb.dataset.delviz){confirmViz=null;deleteViz(vb.dataset.delviz);toast("Визуализация удалена");return}confirmViz=vb.dataset.delviz}
+    else if(vb.dataset.unpin){const[id,k]=vb.dataset.unpin.split(":");const v=vizList.find(x=>x.id===id);v.pins=v.pins.filter((_,i)=>i!==+k);saveViz(v)}
+    else if(vb.id==="pinSave"&&pendingPin){const v=vizList.find(x=>x.id===pendingPin.vid);v.pins=[...(v.pins||[]),{x:pendingPin.x,y:pendingPin.y,itemId:$("#pinItem").value}];pendingPin=null;saveViz(v);toast("Метка поставлена")}
+    else if(vb.id==="pinCancel")pendingPin=null;
+    render();return;
+  }
   const b=e.target.closest("[data-role],[data-tab],[data-room],[data-open],[data-move],[data-var],#close,#scrim,#addToggle,#delBtn,#clTpl,#seedBtn,#imgFetch,#imgDel");
   if(!b)return;
   if(b.id==="delBtn"){
@@ -590,7 +637,9 @@ document.addEventListener("paste",e=>{
   if(/^https?:\/\/\S+\.(jpe?g|png|webp|gif|avif)(\?\S*)?$/i.test(text)&&!(tag==="INPUT"&&e.target.id!=="itemImgUrl")){e.preventDefault();apply(text)}
 });
 document.addEventListener("input",e=>{if(["fQty","fPack","fPrice"].includes(e.target.id))updatePackCalc()});
+let vizPending="";
 document.addEventListener("change",e=>{
+  if(e.target.id==="vzFile"&&e.target.files[0]){fileToDataUrl(e.target.files[0],1600).then(d=>{vizPending=d;const b=$("#vzSubmit");if(b)b.disabled=false;toast("Картинка готова, нажмите «Добавить визуализацию»")})}
   if(e.target.id==="fUrl"){const u=e.target.value.trim();if(!u)return;if($("#fSup")&&!$("#fSup").value)$("#fSup").value=shopName(u);$("#fPrev").textContent="ищу фото…";fetchPreview(u).then(r=>{if(r.img){pendingImg=r.img;const el=$("#fPrev");if(el){setPrev(el,r.img)}}else if($("#fPrev"))$("#fPrev").textContent="фото не найдено";if(r.title&&$("#fName")&&!$("#fName").value)$("#fName").value=r.title.slice(0,120);if(r.price&&$("#fPrice")&&!$("#fPrice").value){$("#fPrice").value=r.price;toast("Цена подставлена со страницы товара")}})}
   if(e.target.id==="itemImgUrl"){const v=e.target.value.trim();if(/^https?:\/\//i.test(v)){const it=byId(openId);imageLoads(v).then(ok=>{if(ok){it.img=v;save(it);toast("Фото добавлено");render()}else toast("По этой ссылке картинка не открывается")})}}
   if(e.target.id==="fFile"&&e.target.files[0]){fileToDataUrl(e.target.files[0]).then(d=>{pendingImg=d;const el=$("#fPrev");setPrev(el,d)})}
@@ -620,6 +669,11 @@ document.addEventListener("submit",e=>{
     if(nv.url)fetchPreview(nv.url).then(r=>{let ch=false;if(r.img){nv.img=r.img;ch=true}if(r.price&&!nv.price){nv.price=r.price;ch=true}if(ch){save(it);render()}});
     it.variants=V;if(it.chosen==null)it.chosen=0;
     toast("Вариант добавлен");save(it);render();
+  }
+  if(id==="vizForm"){
+    if(!vizPending){toast("Сначала выберите картинку");return}
+    const v={id:"viz-"+newId(),created:Date.now(),title:$("#vzTitle").value.trim()||"Визуализация",room:$("#vzRoom").value,img:vizPending,pins:[]};
+    vizPending="";vizList.push(v);pinMode=v.id;saveViz(v);toast("Визуализация добавлена. Кликните по картинке, чтобы поставить метку");render();
   }
   if(id==="projForm"){
     project={...project,name:$("#pjName").value.trim()||"Новый проект",address:$("#pjAddr").value.trim(),budget:+$("#pjBudget").value||0};
