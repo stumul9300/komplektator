@@ -49,6 +49,7 @@ header{background:var(--surface);border-bottom:1px solid var(--line)}
 .hist time{color:var(--muted);font-size:12px;margin-right:6px;font-family:var(--f-mono)}.hist .who{font-weight:600}
 .hist .ch{color:var(--muted)}.hist .ch b{color:var(--fg);font-weight:500}
 .filters{display:flex;flex-wrap:wrap;gap:10px 12px}.filters .field{flex:1 1 150px;min-width:0}
+.queues{display:flex;flex-wrap:wrap;gap:10px}.queue{flex:1 1 140px;display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--bg);text-align:left;cursor:pointer}.queue b{font-size:24px;font-family:var(--f-mono)}.queue span{font-size:13px;color:var(--muted)}.queue:hover{border-color:var(--accent)}.queue.bad b{color:var(--s-bad)}
 .histday{margin:18px 0 6px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
 .tour-spot{position:fixed;z-index:90;border-radius:10px;box-shadow:0 0 0 3px var(--brass),0 0 0 9999px rgba(10,16,13,.55);pointer-events:none;transition:all .2s}
 .tour-card{position:fixed;z-index:91;width:min(340px,calc(100vw - 32px));background:var(--surface);color:var(--fg);border-radius:12px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.3)}
@@ -588,7 +589,7 @@ function overview(){
   const rooms=[...new Set(items.map(i=>i.room))].map(r=>{const its=items.filter(i=>i.room===r);return[r,its.reduce((s,i)=>s+sum(i),0),its.length]}).sort((a,b)=>b[1]-a[1]);
   const maxR=Math.max(1,...rooms.map(r=>r[1]));
   const tasks=mine();
-  return projectPanel()+accessPanel()+`
+  return projectPanel()+accessPanel()+queuesPanel()+`
   <div class="grid">
     ${can("prices")?`<section class="panel">
       <h3>Бюджет комплектации</h3>
@@ -719,6 +720,61 @@ function projectPanel(){
   </form></details>`;
 }
 let secPick="";
+// ---------- PDF-подборка: страница для печати, «Сохранить как PDF» в окне печати ----------
+function exportPdf(){
+  const forClient=role==="client"||(role==="kompl"&&confirm("Сделать версию для заказчика?\n\nОК — без цены для бюро, скрытых позиций и внутренних заметок.\nОтмена — полная версия для команды."));
+  const r0=role;if(forClient)role="client"; // цены считаем так, как их видит заказчик
+  try{
+    const list=items.filter(i=>!forClient||!i.hideClient);
+    const pr=can("prices");
+    const stT=i=>i.st==="ok"?"Утверждено":i.st==="ord"?"Заказано":i.st==="del"?"Доставлено":i.st==="cli"?"Ждёт заказчика":i.st==="des"?"Ждёт дизайнера":"Подбор";
+    let grand=0;
+    const body=groups(list).map(g=>{grand+=g.total;return `${g.sec!==null?`<h2>${esc(g.sec||"Без раздела")}</h2>`:""}${g.rooms.map(r=>`<h3>${esc(r.room||"Помещение не указано")}</h3>${r.items.map(i=>`<div class="it"><div class="ph">${imgOk(i.img)?`<img src="${esc(i.img)}" alt="">`:""}</div><div class="tx"><div class="nm"><span class="no">${i._no}</span> ${esc(i.name)}</div><div class="mt">${[i.brand,i.sku,i.dims&&i.dims+" мм",i.color].filter(x=>x&&x!=="—").map(esc).join(" · ")}</div><div class="mt">${packs(i)?`${packs(i)} кор. × ${fmtN(i.perPack)} ${esc(i.unit)} = ${fmtN(i.qty)} ${esc(i.unit)}`:`${fmtN(i.qty)} ${esc(i.unit||"шт")}`}${pr?` × ${fmtRub(unitPrice(i))}${+i.delivery?` + доставка ${fmtRub(i.delivery)}`:""}`:""} · <b>${stT(i)}</b></div>${!forClient&&i.note?`<div class="mt">${esc(i.note)}</div>`:""}${!forClient&&+i.bureauPrice&&pr?`<div class="mt">Цена для бюро: ${fmtRub(i.bureauPrice)}</div>`:""}</div>${pr?`<div class="sm">${fmtRub(sum(i))}</div>`:""}</div>`).join("")}`).join("")}${g.sec!==null&&pr?`<div class="tot">Итого по разделу: ${fmtRub(g.total)}</div>`:""}`}).join("");
+    const html=`<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>${esc(project.name||"Подборка")}</title><style>body{font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#1c2420;margin:24px}h1{font-size:22px;margin:0}h2{font-size:15px;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid #2f5d50;padding-bottom:4px;margin:22px 0 6px}h3{font-size:13px;color:#66706a;margin:12px 0 4px}.it{display:grid;grid-template-columns:72px 1fr auto;gap:12px;padding:8px 0;border-bottom:1px solid #ddd;break-inside:avoid}.ph{width:72px;height:72px;background:#eef0ec;border-radius:6px;overflow:hidden}.ph img{width:100%;height:100%;object-fit:cover}.nm{font-weight:600}.no{color:#888;font-weight:400}.mt{color:#555;font-size:12.5px}.sm{font-weight:600;white-space:nowrap}.tot{text-align:right;font-weight:600;margin:6px 0}.grand{text-align:right;font-size:17px;font-weight:700;margin-top:18px}.sub{color:#66706a;margin:4px 0 0}@media print{body{margin:10mm}button{display:none}}</style></head><body><button onclick="print()" style="float:right;padding:8px 14px">Сохранить в PDF / печать</button><h1>${esc(project.name||"Подборка")}</h1><p class="sub">${esc(project.address||"")} · ${new Date().toLocaleDateString("ru-RU")} · ${forClient?"для заказчика":"для команды"} · ${list.length} поз.</p>${body}${pr?`<div class="grand">Итого: ${fmtRub(grand)}${+project.area?` · ${fmtRub(Math.round(grand/project.area))} за м²`:""}</div><p class="sub" style="text-align:right">Суммы с учётом количества и доставки; альтернативные варианты не суммируются.</p>`:""}</body></html>`;
+    const w=window.open("","_blank");if(!w){toast("Браузер заблокировал новое окно — разрешите всплывающие окна для сайта");return}
+    w.document.open();w.document.write(html);w.document.close();setTimeout(()=>{try{w.print()}catch(e){}},600);
+  }finally{role=r0}
+}
+// ---------- Поиск, фильтры и очереди ----------
+let flt=(()=>{try{return {q:"",st:"",sec:"",who:"",stale:false,days:30,over:false,...JSON.parse(sessionStorage.getItem("k-flt")||"{}")}}catch(e){return {q:"",st:"",sec:"",who:"",stale:false,days:30,over:false}}})();
+function setFlt(p){flt={...flt,...p};try{sessionStorage.setItem("k-flt",JSON.stringify(flt))}catch(e){}render()}
+const today=()=>new Date().toISOString().slice(0,10);
+const isOver=i=>i.st==="ord"&&i.eta&&i.eta<today()&&i.ship!=="done";
+const isStale=i=>!i.priceCheckedAt||Date.now()-i.priceCheckedAt>(+flt.days||30)*864e5;
+const isRej=i=>i.st==="pick"&&(i.sd==="rej"||i.sc==="rej");
+// Очереди: у каждой позиции одна очередь
+const QUEUES=[["des","Ждёт дизайнера",i=>i.st==="des"],["cli","Ждёт заказчика",i=>i.st==="cli"],["rej","На замену",isRej],["ok","Готово к закупке",i=>i.st==="ok"]];
+const STF=[["","Все статусы"],["pick","Подбор"],["rej","На замену"],["des","Ждёт дизайнера"],["re","Повторное согласование"],["cli","Ждёт заказчика"],["ok","Готово к закупке"],["ord","Заказано"],["del","Доставлено"]];
+function passFilter(i){
+  const q=flt.q.trim().toLowerCase();
+  if(q&&![i.name,i.sku,i.sup,i.brand,i.note,i.ident,...(i.comments||[]).map(c=>c.t)].some(v=>String(v||"").toLowerCase().includes(q)))return false;
+  if(flt.st){if(flt.st==="rej"){if(!isRej(i))return false}else if(flt.st==="re"){if(!i.reapprove)return false}else if(flt.st==="pick"){if(i.st!=="pick"||isRej(i))return false}else if(i.st!==flt.st)return false}
+  if(flt.sec&&(i.section||"")!==(flt.sec==="—"?"":flt.sec))return false;
+  if(flt.who&&ST[i.st].owner!==flt.who)return false;
+  if(flt.stale&&!isStale(i))return false;
+  if(flt.over&&!isOver(i))return false;
+  return true;
+}
+function filterBar(){
+  const on=flt.q||flt.st||flt.sec||flt.who||flt.stale||flt.over;
+  return `<div class="filters panel" style="margin-bottom:12px;align-items:flex-end">
+  <label class="field" style="flex:2 1 220px">Поиск<input id="fQ" type="search" value="${esc(flt.q)}" placeholder="название, артикул, поставщик, комментарий"></label>
+  <label class="field">Статус<select id="fSt">${STF.map(([v,t])=>`<option value="${v}"${flt.st===v?" selected":""}>${t}</option>`).join("")}</select></label>
+  <label class="field">Раздел<select id="fSec"><option value="">Все</option>${allSections().filter(x=>items.some(i=>i.section===x)).map(x=>`<option${flt.sec===x?" selected":""}>${esc(x)}</option>`).join("")}<option value="—"${flt.sec==="—"?" selected":""}>Без раздела</option></select></label>
+  <label class="field">Чей ход<select id="fWho"><option value="">Все</option>${Object.entries(ROLES).map(([k,v])=>`<option value="${k}"${flt.who===k?" selected":""}>${v.name}</option>`).join("")}</select></label>
+  <label class="check"><input type="checkbox" id="fOver"${flt.over?" checked":""}> Просрочена поставка</label>
+  ${role!=="client"?`<label class="check"><input type="checkbox" id="fStale"${flt.stale?" checked":""}> Цена не проверялась <input id="fDays" type="number" min="1" value="${+flt.days||30}" style="width:56px;margin:0 4px"> дн.</label>`:""}
+  ${on?`<button class="btn link" id="fReset">Сбросить</button>`:""}</div>`;
+}
+function queuesPanel(){
+  return `<section class="panel" style="margin-bottom:16px"><h3>Очереди согласования</h3><div class="queues">${QUEUES.map(([k,t,f])=>`<button class="queue" data-queue="${k}"><b>${items.filter(f).length}</b><span>${t}</span></button>`).join("")}${items.some(isOver)?`<button class="queue bad" data-queue="over"><b>${items.filter(isOver).length}</b><span>Просрочена поставка</span></button>`:""}</div></section>`;
+}
+function duplicateItem(src){
+  const skip=["id","_no","approvals","comments","pay","st","sd","sc","reapprove","sentAt","eta","etaFact","ship","supOk","deleted","deletedBy","priceCheckedAt","priceCheckedBy","created"];
+  const it=structuredClone(Object.fromEntries(Object.entries(src).filter(([k])=>!skip.includes(k))));
+  Object.assign(it,{id:newId(),pid,created:Date.now(),name:src.name+" (копия)",st:"pick",comments:[],approvals:[],pay:{status:"none",invoice:0,paid:0,list:[]},checklist:(src.checklist||[]).map(c=>({...c,done:false}))});
+  allItems.push(it);save(it);openId=it.id;toast("Копия создана: статус «Подбор», без согласований и оплат");render();
+}
 // ---------- Отказ с причиной (одна позиция или несколько) ----------
 function askReject(ids){
   $(".rejmodal")?.remove();
@@ -1176,7 +1232,7 @@ function groups(list){
   return secs;
 }
 function spec(){
-  const list=items.filter(i=>room==="Все"||i.room===room);
+  const list=items.filter(i=>room==="Все"||i.room===room).filter(passFilter);
   const tot=list.reduce((s,i)=>s+sum(i),0);
   const canAdd=role==="kompl"&&!readOnly;
   const usedRooms=["Все",...allRooms().filter(r=>items.some(i=>i.room===r))];
@@ -1185,8 +1241,10 @@ function spec(){
   <div class="toolbar">
     <div class="chips">${usedRooms.map(r=>`<button class="chip" data-room="${esc(r)}" aria-pressed="${r===room}">${esc(r)}</button>`).join("")}</div>
     ${canAdd?`<div class="actions">${(()=>{const ids=[...selIds].filter(id=>byId(id)?.st==="pick");const nPick=items.filter(i=>i.st==="pick").length;const sel=[...selIds].filter(id=>byId(id));return (ids.length?`<button class="btn pri" id="bulkSend">Отправить дизайнеру (${ids.length})</button>`:nPick?`<button class="btn" id="selAllPick">Выбрать все в подборе (${nPick})</button>`:"")+(sel.length?`<button class="btn" id="supReq">Запрос поставщику (${sel.length})</button>`:"")})()}<input type="file" id="xlsFile" accept=".xlsx,.xls,.ods,.csv" hidden><button class="btn" id="importXls">Загрузить из Excel</button><button class="btn" id="importSheet">Из Google-таблицы</button><button class="btn pri" id="addToggle">Добавить позицию</button></div>`:""}
-    ${items.length?`<button class="btn" id="exportXls">Скачать Excel</button>`:""}
+    ${items.length?`<div class="actions"><button class="btn" id="exportXls">Скачать Excel</button><button class="btn" id="exportPdf">PDF-подборка</button></div>`:""}
   </div>
+  ${items.length?filterBar():""}
+  ${canAdd&&selIds.size?`<div class="filters panel" style="margin-bottom:12px;align-items:flex-end"><b style="align-self:center">Выбрано: ${[...selIds].filter(byId).length}</b><label class="field">Перенести в помещение${roomSelect("bulkRoom","")}</label><label class="field">Назначить раздел${sectionSelect("bulkSec","")}</label><button class="btn link" id="selClear" style="align-self:center">Снять выделение</button></div>`:""}
   ${canAdd&&supFormOpen&&selIds.size?`<form class="add panel" id="supForm"><label class="field">Поставщик<input id="supName" list="supList" required placeholder="например, Сантехлидер" autocomplete="off"><datalist id="supList">${[...new Set([...items.map(i=>i.sup),...reqList.map(r=>r.supplier)].filter(Boolean))].map(x=>`<option value="${esc(x)}">`).join("")}</datalist></label><label class="field" style="grid-column:span 2">Сообщение поставщику<input id="supMsg" placeholder="например, нужна поставка до 15 ноября, рассмотрим аналоги"></label><div class="field" style="justify-content:flex-end"><button class="btn pri" type="submit">Создать ссылку для поставщика (${selIds.size} поз.)</button></div></form>`:""}
   ${canAdd?reqPanel():""}
   ${canAdd?`<form class="add panel" id="addForm" ${items.length?"hidden":""}>
@@ -1216,7 +1274,7 @@ function spec(){
   ${!items.length&&!canAdd?emptyAll():`<div class="tablebox"><table class="spec">
     <colgroup><col style="width:64px"><col><col style="width:170px"><col style="width:120px"><col style="width:120px"><col style="width:130px"><col style="width:230px"></colgroup>
     <thead><tr><th></th><th>Позиция</th><th>Помещение</th><th class="num">Кол-во</th><th class="num">Цена</th><th class="num">Сумма</th><th>Статус</th></tr></thead>
-    <tbody>${groups(list).map(g=>(g.sec!==null?`<tr class="sechead"><td colspan="7">${esc(g.sec||"Без раздела")}</td></tr>`:"")+g.rooms.map(r=>`<tr class="roomhead"><td></td><td colspan="6">${esc(r.room||"Помещение не указано")}</td></tr>`+r.items.map(i=>`<tr data-open="${i.id}"><td style="width:52px">${role==="kompl"&&!readOnly?`<input type="checkbox" class="rowsel" data-sel="${i.id}" ${selIds.has(i.id)?"checked":""} aria-label="Выбрать">`:""}<div class="sw" style="${swStyle(i)}"></div></td><td><div class="t"><span class="no">${i._no||""}</span>${esc(i.name)}</div><div class="sku">${[i.brand,i.sku,i.sup,i.ident,i.dims&&i.dims+" мм",i.color,i.note].filter(x=>x&&x!=="—").map(esc).join(" · ")}</div></td><td>${role==="kompl"&&!readOnly?roomSelect("roomOf-"+i.id,i.room,` data-room-item="${i.id}"`):esc(i.room)}</td><td class="num money">${qtyText(i)}</td><td class="num money">${rub(unitPrice(i))}${role!=="client"&&+i.clientPrice?`<div class="sku">клиенту ${rub(i.clientPrice)}</div>`:""}</td><td class="num money">${rub(sum(i))}${+i.delivery?`<div class="sku">вкл. доставку ${rub(i.delivery)}</div>`:""}${role!=="client"&&+i.bureauPrice?`<div class="sku">бюро ${rub(bureauSum(i))}</div>`:""}</td><td>${tri(i)}${i.variants?.length>1?` <span class="m">${i.variants.length} вар.</span>`:""}${i.comments?.length?` <span class="m">· ${i.comments.length} комм.</span>`:""}</td></tr>`).join("")).join("")+(g.sec!==null?`<tr class="sectot"><td></td><td colspan="4">Итого по разделу${perM2(g.total)}</td><td class="num money">${rub(g.total)}</td><td></td></tr>`:"")).join("")||`<tr><td colspan="7" class="empty">${items.length?"В этом помещении пока нет позиций":"Добавьте первую позицию кнопкой выше"}</td></tr>`}</tbody>
+    <tbody>${groups(list).map(g=>(g.sec!==null?`<tr class="sechead"><td colspan="7">${esc(g.sec||"Без раздела")}</td></tr>`:"")+g.rooms.map(r=>`<tr class="roomhead"><td></td><td colspan="6">${esc(r.room||"Помещение не указано")}</td></tr>`+r.items.map(i=>`<tr data-open="${i.id}"><td style="width:52px">${role==="kompl"&&!readOnly?`<input type="checkbox" class="rowsel" data-sel="${i.id}" ${selIds.has(i.id)?"checked":""} aria-label="Выбрать">`:""}<div class="sw" style="${swStyle(i)}"></div></td><td><div class="t"><span class="no">${i._no||""}</span>${esc(i.name)}</div><div class="sku">${[i.brand,i.sku,i.sup,i.ident,i.dims&&i.dims+" мм",i.color,i.note].filter(x=>x&&x!=="—").map(esc).join(" · ")}</div></td><td>${role==="kompl"&&!readOnly?roomSelect("roomOf-"+i.id,i.room,` data-room-item="${i.id}"`):esc(i.room)}</td><td class="num money">${qtyText(i)}</td><td class="num money">${rub(unitPrice(i))}${role!=="client"&&+i.clientPrice?`<div class="sku">клиенту ${rub(i.clientPrice)}</div>`:""}</td><td class="num money">${rub(sum(i))}${+i.delivery?`<div class="sku">вкл. доставку ${rub(i.delivery)}</div>`:""}${role!=="client"&&+i.bureauPrice?`<div class="sku">бюро ${rub(bureauSum(i))}</div>`:""}</td><td>${tri(i)}${i.variants?.length>1?` <span class="m">${i.variants.length} вар.</span>`:""}${i.comments?.length?` <span class="m">· ${i.comments.length} комм.</span>`:""}</td></tr>`).join("")).join("")+(g.sec!==null?`<tr class="sectot"><td></td><td colspan="4">Итого по разделу${perM2(g.total)}</td><td class="num money">${rub(g.total)}</td><td></td></tr>`:"")).join("")||`<tr><td colspan="7" class="empty">${items.length?(flt.q||flt.st||flt.sec||flt.who||flt.stale||flt.over?"Ничего не найдено — измените фильтры":"В этом помещении пока нет позиций"):"Добавьте первую позицию кнопкой выше"}</td></tr>`}</tbody>
     <tfoot><tr><td></td><td colspan="4">Итого${room!=="Все"?" · "+esc(room):""}${perM2(tot)}</td><td class="num money">${rub(tot)}</td><td></td></tr></tfoot>
   </table></div>`}${role==="kompl"&&!readOnly&&projItems().some(i=>i.deleted)?`<details class="panel" style="margin-top:16px"><summary style="cursor:pointer;font-weight:600">Корзина · ${projItems().filter(i=>i.deleted).length}</summary><div class="list" style="margin-top:8px">${projItems().filter(i=>i.deleted).map(i=>`<div class="row"><div class="sw" style="${swStyle(i)}"></div><div class="grow"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.room)}</div></div><button class="btn" data-restore="${i.id}">Вернуть</button></div>`).join("")}</div></details>`:""}`;
 }
@@ -1256,7 +1314,7 @@ function renderDrawer(){
   const addVar=!readOnly&&role==="kompl"&&i.st==="pick"?`<div><h3>Добавить вариант</h3><form class="add" id="varForm" style="margin:0"><label class="field">Название<input id="vName" required autocomplete="off"></label><label class="field">Бренд<input id="vBrand" autocomplete="off"></label><label class="field">Цена за ед., ₽<input id="vPrice" type="number" min="0" placeholder="по ссылке"></label><label class="field">Ссылка<input id="vUrl" type="url" placeholder="https://"></label><div class="field" style="justify-content:flex-end"><button class="btn" type="submit">Добавить вариант</button></div></form></div>`:"";
   const tick=`<label class="check"><input type="checkbox" id="needClient" ${needC(i)?"checked":""} ${canTick?"":"disabled"}> Согласовать с заказчиком</label>`;
   const eta=!readOnly&&role==="kompl"&&i.st==="ord"?`<label class="field">Дата поставки<input id="etaInput" type="date" value="${esc(i.eta||"")}"></label>`:"";
-  const del=!readOnly&&role==="kompl"?`<button class="btn bad" id="delBtn">${confirmDel?"Точно удалить? Нажмите ещё раз":"Удалить позицию"}</button>`:"";
+  const del=!readOnly&&role==="kompl"?`<div class="actions"><button class="btn" id="dupBtn">Дублировать позицию</button><button class="btn" id="priceOk">Цена проверена${i.priceCheckedAt?` (было ${new Date(i.priceCheckedAt).toLocaleDateString("ru-RU",{day:"numeric",month:"short"})})`:""}</button></div><button class="btn bad" id="delBtn">${confirmDel?"Точно удалить? Нажмите ещё раз":"Удалить позицию"}</button>`:"";
   const link=safeUrl(i.url);
   const photoTop=imgOk(i.img)?`<img class="photo" src="${esc(i.img)}" alt="${esc(i.name)}">`:"";
   const nb=packs(i);
@@ -1301,7 +1359,7 @@ function render(){
   renderHeader();
   const focusId=document.activeElement?.id;
   const addOpen=$("#addForm")&&!$("#addForm").hidden;
-  const formVals={};document.querySelectorAll("#main input,#main select").forEach(el=>{if(el.id&&el.type!=="file")formVals[el.id]=el.type==="checkbox"?el.checked:el.value});
+  const formVals={};document.querySelectorAll("#main input,#main select").forEach(el=>{if(el.id&&el.type!=="file"&&!/^(f(Q|St|Sec|Who|Over|Stale|Days)|hf\w+|bulk(Room|Sec))$/.test(el.id))formVals[el.id]=el.type==="checkbox"?el.checked:el.value});
   const banner=(saveErr&&unsaved.size?`<div class="alert">${esc(saveErr)}. <button class="btn" id="retrySave">Сохранить ещё раз</button></div>`:"")+(role==="kompl"&&lostItems.length?`<div class="alert">В базе нет ${lostItems.length} поз., которые были в этом браузере: ${lostItems.map(i=>esc(i.name)).join(", ")}. <button class="btn" id="restoreLost">Вернуть</button> <button class="btn" id="dismissLost">Не нужно</button></div>`:"");
   $("#main").innerHTML=banner+(!loaded?`<div class="empty">Загружаю данные проекта…</div>`:(offline?`<p class="note warn">База данных не подключена: изменения пропадут после перезагрузки страницы.</p>`:"")+({overview,spec,inbox,delivery,payments,viz,history}[tab])());
   if(addOpen&&$("#addForm"))$("#addForm").hidden=false;
@@ -1340,6 +1398,12 @@ document.addEventListener("click",e=>{
   if(e.target.id==="bulkSend"){const ids=[...selIds].filter(id=>byId(id)?.st==="pick");selIds.clear();bulkMove(ids,"des");return}
   if(e.target.id==="selAllPick"){items.filter(i=>i.st==="pick"&&(room==="Все"||i.room===room)).forEach(i=>selIds.add(i.id));render();return}
   if(e.target.id==="bulkPick"){bulkMove(items.filter(i=>i.st==="pick").map(i=>i.id),"des");return}
+  const qb=e.target.closest("[data-queue]");if(qb){const k=qb.dataset.queue;flt={...flt,q:"",sec:"",who:"",stale:false,over:k==="over",st:k==="over"?"":k};setFlt({});tab="spec";room="Все";render();return}
+  if(e.target.id==="fReset"){setFlt({q:"",st:"",sec:"",who:"",stale:false,over:false});return}
+  if(e.target.id==="selClear"){selIds.clear();render();return}
+  if(e.target.id==="dupBtn"){const it=byId(openId);if(it)duplicateItem(it);return}
+  if(e.target.id==="priceOk"){const it=byId(openId);if(it){it.priceCheckedAt=Date.now();it.priceCheckedBy=role;save(it);toast("Отмечено: цена проверена сегодня");render()}return}
+  if(e.target.id==="exportPdf"){exportPdf();return}
   if(e.target.closest("[data-rejcancel]")){$(".rejmodal")?.remove();return}
   if(e.target.id==="inbOk"){const ids=[...inboxSel].filter(x=>mine().some(i=>i.id===x));ids.forEach(x=>{const i=byId(x);move(x,role==="client"?"ok":(needC(i)?"cli":"ok"),true)});inboxSel.clear();toast(`Согласовано: ${ids.length} поз.`);render();return}
   if(e.target.id==="inbRej"){const ids=[...inboxSel].filter(x=>mine().some(i=>i.id===x));if(ids.length)askReject(ids);return}
@@ -1363,7 +1427,7 @@ document.addEventListener("click",e=>{
   if(!b)return;
   if(b.id==="delBtn"){
     if(!confirmDel){confirmDel=true;renderDrawer();return}
-    const it=byId(openId);openId=null;confirmDel=false;it.deleted=Date.now();save(it);
+    const it=byId(openId);openId=null;confirmDel=false;it.deleted=Date.now();it.deletedBy=role;save(it);
     toast("Позиция перенесена в корзину, её можно вернуть внизу спецификации");render();return;
   }
   confirmDel=false;
@@ -1421,6 +1485,7 @@ document.addEventListener("paste",e=>{
 });
 document.addEventListener("toggle",e=>{if(e.target.id==="histBox"){histOpen=e.target.open;if(histOpen&&openId)loadItemAudit(openId)}},true);
 document.addEventListener("input",e=>{
+  if(e.target.id==="fQ"){flt.q=e.target.value;try{sessionStorage.setItem("k-flt",JSON.stringify(flt))}catch(_){}render();return}
   if(e.target.id==="hfQ"){feedF.q=e.target.value;render();return}
   if(e.target.id==="fName"&&AREA_RE.test(e.target.value)&&$("#fUnit")?.value==="шт"&&!$("#fUnit").dataset.touched){$("#fUnit").value="м²";updatePackCalc()}
   if(e.target.id==="colTile"&&colEdit){colEdit.tile=+e.target.value;const st=document.querySelector('.stage.editable');if(st)st.style.backgroundSize=colEdit.tile+"% auto"}if(["fQty","fPack","fPrice"].includes(e.target.id))updatePackCalc()});
@@ -1447,6 +1512,18 @@ document.addEventListener("change",e=>{
   if(e.target.id==="itemSectionNew"){const nm=addSection(e.target.value);if(nm){const it=byId(openId);it.section=nm;save(it);toast("Раздел: "+nm);render()}}
   if(e.target.id==="fSection"){const n=$("#fSectionNew");n.hidden=e.target.value!=="__new";if(!n.hidden)n.focus()}
   if(e.target.id==="xlsFile"&&e.target.files[0]){importXls(e.target.files[0]);e.target.value=""}
+  if(e.target.id==="fSt")return setFlt({st:e.target.value});
+  if(e.target.id==="fSec")return setFlt({sec:e.target.value});
+  if(e.target.id==="fWho")return setFlt({who:e.target.value});
+  if(e.target.id==="fOver")return setFlt({over:e.target.checked});
+  if(e.target.id==="fStale")return setFlt({stale:e.target.checked});
+  if(e.target.id==="fDays")return setFlt({days:Math.max(1,+e.target.value||30)});
+  if(e.target.id==="bulkRoom"||e.target.id==="bulkSec"){
+    let v=e.target.value;const isRoom=e.target.id==="bulkRoom";
+    if(v==="__new"){v=isRoom?addRoom(prompt("Название помещения:")||""):addSection(prompt("Название раздела:")||"");if(!v){render();return}}
+    const its=[...selIds].map(byId).filter(Boolean);
+    if(!confirm(`${isRoom?"Перенести в помещение":"Назначить раздел"} «${v||"без раздела"}»: ${its.length} поз. Продолжить?`)){render();return}
+    its.forEach(i=>{if(isRoom)i.room=v;else i.section=v;save(i)});toast(`Изменено позиций: ${its.length}`);render();return}
   if(/^hf(From|To|Who|Act)$/.test(e.target.id)){feedF={...feedF,[{hfFrom:"from",hfTo:"to",hfWho:"who",hfAct:"act"}[e.target.id]]:e.target.value};render();return}
   if(e.target.id==="projSel"){const v=e.target.value;if(v==="__new"){e.target.value=pid;newProject();}else switchProject(v);return}
   if(e.target.id==="itemSup"){const it=byId(openId);it.sup=e.target.value.trim();save(it);toast("Поставщик сохранён");render()}
