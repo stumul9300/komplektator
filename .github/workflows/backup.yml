@@ -1,0 +1,37 @@
+name: Ночная копия базы
+# Каждый день в 00:00 по Москве (21:00 UTC). Копия шифруется паролем из секрета BACKUP_PASSWORD
+# и хранится 30 дней во вкладке Actions. Без пароля открыть её нельзя, даже если репозиторий публичный.
+on:
+  schedule:
+    - cron: "0 21 * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Проверить пароль
+        env:
+          BACKUP_PASSWORD: ${{ secrets.BACKUP_PASSWORD }}
+        run: |
+          if [ -z "$BACKUP_PASSWORD" ]; then echo "::error::Добавьте секрет BACKUP_PASSWORD (Settings → Secrets and variables → Actions)"; exit 1; fi
+      - name: Выгрузить таблицы
+        run: node scripts/backup.mjs
+      - name: Зашифровать
+        env:
+          BACKUP_PASSWORD: ${{ secrets.BACKUP_PASSWORD }}
+        run: |
+          echo "STAMP=$(TZ=Europe/Moscow date +%Y-%m-%d_%H-%M)" >> "$GITHUB_ENV"
+          tar czf - backup | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass env:BACKUP_PASSWORD -out backup.tar.gz.enc
+          rm -rf backup
+      - uses: actions/upload-artifact@v4
+        with:
+          name: komplektator-backup-${{ env.STAMP }}
+          path: backup.tar.gz.enc
+          retention-days: 30
+          if-no-files-found: error

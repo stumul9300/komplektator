@@ -1,0 +1,42 @@
+name: Восстановить базу из копии
+# Запуск вручную: Actions → «Восстановить базу из копии» → Run workflow.
+# run_id — номер запуска ночной копии (последнее число в адресе страницы этого запуска).
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Номер запуска ночной копии (из адреса …/actions/runs/НОМЕР)"
+        required: true
+      confirm:
+        description: "Напишите ВОССТАНОВИТЬ, чтобы подтвердить"
+        required: true
+permissions:
+  contents: read
+  actions: read
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Подтверждение
+        if: ${{ inputs.confirm != 'ВОССТАНОВИТЬ' }}
+        run: |
+          echo "::error::Нужно написать ВОССТАНОВИТЬ в поле подтверждения"; exit 1
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+          path: dl
+      - name: Расшифровать
+        env:
+          BACKUP_PASSWORD: ${{ secrets.BACKUP_PASSWORD }}
+        run: |
+          f=$(find dl -name 'backup.tar.gz.enc' | head -1)
+          [ -n "$f" ] || { echo "::error::В этом запуске нет копии"; exit 1; }
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:BACKUP_PASSWORD -in "$f" | tar xzf -
+          cat backup/summary.json
+      - name: Записать в базу
+        run: node scripts/restore.mjs
