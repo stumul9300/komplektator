@@ -51,7 +51,7 @@ declare
   act text;
   who text;
   pid text;
-  skip text[] := array['_actor','sd','sc','sentAt','supOk','imgCut','approvals','_no','priceCheckedBy'];
+  skip text[] := array['_actor','sd','sc','sentAt','supOk','imgCut','_no','priceCheckedBy'];
 begin
   if tg_op = 'DELETE' then
     insert into audit_events(project_id,item_id,actor,action,field,old_json,new_json,version)
@@ -91,6 +91,15 @@ begin
       if jsonb_array_length(coalesce(n,'[]'::jsonb)) > jsonb_array_length(coalesce(o,'[]'::jsonb)) then
         insert into audit_events(project_id,item_id,actor,action,field,old_json,new_json,version)
         select pid, new.id, coalesce(c->>'r', who), 'comment', 'comments', null, c, new.version
+        from jsonb_array_elements(n) with ordinality as x(c, i)
+        where i > jsonb_array_length(coalesce(o,'[]'::jsonb));
+      end if;
+      continue;
+    end if;
+    if k = 'approvals' then
+      if jsonb_array_length(coalesce(n,'[]'::jsonb)) > jsonb_array_length(coalesce(o,'[]'::jsonb)) then
+        insert into audit_events(project_id,item_id,actor,action,field,old_json,new_json,version)
+        select pid, new.id, coalesce(c->>'r', who), 'approval', 'approvals', null, c, new.version
         from jsonb_array_elements(n) with ordinality as x(c, i)
         where i > jsonb_array_length(coalesce(o,'[]'::jsonb));
       end if;
