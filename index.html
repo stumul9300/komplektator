@@ -165,6 +165,8 @@ td .roomsel{background:transparent}
 .layer{position:absolute;cursor:pointer}
 .stage.editable .layer{cursor:move}
 .layer img{display:block;width:100%;height:auto;pointer-events:none}
+.layer.cut img{filter:drop-shadow(0 10px 12px rgba(0,0,0,.35)) drop-shadow(0 2px 3px rgba(0,0,0,.25))}
+.cutstat{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.65);color:#fff;font-size:12px;padding:4px 8px;border-radius:6px;white-space:nowrap;pointer-events:none}
 .layer.sel{outline:2px dashed var(--accent);outline-offset:2px}
 .grip{position:absolute;right:-7px;bottom:-7px;width:14px;height:14px;border-radius:50%;background:var(--accent);border:2px solid #fff;cursor:nwse-resize;mix-blend-mode:normal}
 .pickgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px}
@@ -446,6 +448,26 @@ function accessPanel(){
   ${VIS_FEATURES.map(([f,t])=>`<tr><td>${t}</td>${["designer","client"].map(r=>`<td><input type="checkbox" class="visbox" id="vis-${r}-${f}" data-vis="${r}:${f}" ${v[r]?.[f]?"checked":""} aria-label="${t}: ${ROLES[r].name}"></td>`).join("")}</tr>`).join("")}
   </tbody></table></div></details>`;
 }
+// ---------- Удаление фона ИИ прямо в браузере (@imgly/background-removal, модель скачивается один раз) ----------
+let bgLib=null;const cutting={};
+async function imageBlob(src){
+  if(src.startsWith("data:"))return (await fetch(src)).blob();
+  try{const r=await fetch(src,{mode:"cors"});if(r.ok)return await r.blob()}catch(e){}
+  if(SUPABASE_URL&&SUPABASE_KEY){const r=await fetch(SUPABASE_URL+"/functions/v1/preview?img="+encodeURIComponent(src),{headers:{apikey:SUPABASE_KEY}});if(r.ok&&(r.headers.get("content-type")||"").startsWith("image/"))return r.blob()}
+  throw new Error("cors");
+}
+async function blobToAlphaDataUrl(blob,max=800){const bm=await createImageBitmap(blob);const k=Math.min(1,max/Math.max(bm.width,bm.height));const c=document.createElement("canvas");c.width=Math.round(bm.width*k);c.height=Math.round(bm.height*k);c.getContext("2d").drawImage(bm,0,0,c.width,c.height);const w=c.toDataURL("image/webp",.9);return w.startsWith("data:image/webp")?w:c.toDataURL("image/png")}
+async function cutItem(it){
+  if(cutting[it.id])return;cutting[it.id]="загружаю ИИ…";render();
+  try{
+    if(!bgLib)bgLib=await import("https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.7.0/+esm");
+    const blob=await imageBlob(it.img);
+    cutting[it.id]="убираю фон…";render();
+    const out=await bgLib.removeBackground(blob,{model:"isnet_fp16",output:{format:"image/png"},progress:(k,c,t)=>{const el=document.querySelector(`[data-cutstat="${it.id}"]`);if(el&&t)el.textContent=(k.startsWith("fetch")?"загружаю ИИ ":"убираю фон ")+Math.round(c/t*100)+"%"}});
+    it.imgCut=await blobToAlphaDataUrl(out);delete cutting[it.id];save(it);toast("Фон убран: "+it.name);
+  }catch(e){console.warn(e);delete cutting[it.id];toast(e.message==="cors"?"Магазин не даёт обработать это фото. Загрузите фото в карточке позиции файлом или через Ctrl+V и попробуйте снова.":"Не получилось убрать фон. Попробуйте ещё раз.")}
+  render();
+}
 // ---------- Сочетания: фон-плитка + товары поверх (коллаж) ----------
 let colList=[],colEdit=null,colSel=null,confirmCol=null;
 async function saveCol(c){if(!sb){render();return}const {id,...data}=c;const {error}=await sb.from("project").upsert({id,data});if(error)handleWriteError(error)}
@@ -454,7 +476,7 @@ function colStage(c,editable){
   const bg=byId(c.bgId);
   const bgStyle=bg&&imgOk(bg.img)?`background-image:url(&quot;${cssUrl(bg.img)}&quot;);background-size:${c.tile||25}% auto;background-repeat:repeat`:"";
   return `<div class="stage${editable?" editable":""}" data-stage="${c.id}" style="${bgStyle}">${bg?"":`<div class="stagehint">${editable?"Отметьте галкой плитку или обои и выберите их фоном":"Фон не выбран"}</div>`}
-  ${(c.layers||[]).map((l,k)=>{const it=byId(l.itemId);if(!it||!imgOk(it.img))return "";return `<div class="layer${editable&&colSel===k?" sel":""}" data-layer="${k}" ${editable?"":`data-open="${it.id}"`} style="left:${l.x}%;top:${l.y}%;width:${l.w}%;${l.blend?"mix-blend-mode:multiply;":""}" title="${esc(it.name)}"><img src="${esc(it.img)}" alt="${esc(it.name)}" draggable="false">${editable?`<span class="grip" data-grip="${k}"></span>`:""}</div>`}).join("")}</div>`;
+  ${(c.layers||[]).map((l,k)=>{const it=byId(l.itemId);if(!it||!imgOk(it.img))return "";const cut=imgOk(it.imgCut)&&!l.orig;return `<div class="layer${editable&&colSel===k?" sel":""}${cut?" cut":""}" data-layer="${k}" ${editable?"":`data-open="${it.id}"`} style="left:${l.x}%;top:${l.y}%;width:${l.w}%;${!cut&&l.blend?"mix-blend-mode:multiply;":""}" title="${esc(it.name)}"><img src="${esc(cut?it.imgCut:it.img)}" alt="${esc(it.name)}" draggable="false">${editable&&cutting[it.id]?`<span class="cutstat" data-cutstat="${it.id}">${cutting[it.id]}</span>`:""}${editable?`<span class="grip" data-grip="${k}"></span>`:""}</div>`}).join("")}</div>`;
 }
 function combos(){
   const canEdit=!readOnly&&(role==="kompl"||role==="designer");
@@ -469,7 +491,7 @@ function combos(){
     <div class="pickgrid">${withImg.map(i=>`<label class="pick${picked.has(i.id)?" on":""}"><input type="checkbox" data-colpick="${i.id}" ${picked.has(i.id)?"checked":""}><span class="sw" style="${swStyle(i)}"></span><span class="pn">${esc(i.name)}</span>${picked.has(i.id)?`<button type="button" class="btn link" data-colbg="${i.id}">${c.bgId===i.id?"фон ✓":"сделать фоном"}</button>`:""}</label>`).join("")||`<div class="empty">Нет позиций с фото. Добавьте фото в карточках позиций.</div>`}</div>
     ${c.bgId?`<label class="field">Размер плитки на картинке<input type="range" id="colTile" min="5" max="100" value="${c.tile||25}"></label>`:""}
     ${colStage(c,true)}
-    ${sl?`<div class="actions"><span class="m" style="color:var(--muted)">Выбрано: ${esc(byId(sl.itemId)?.name||"")}</span><label class="check"><input type="checkbox" id="colBlend" ${sl.blend?"checked":""}> Убрать белый фон</label><button class="btn" id="colFront">На передний план</button></div>`:`<p class="m" style="color:var(--muted);margin:0">Нажмите на товар на картинке, чтобы убрать у него белый фон.</p>`}
+    ${sl?(()=>{const it=byId(sl.itemId);return `<div class="actions"><span class="m" style="color:var(--muted)">Выбрано: ${esc(it?.name||"")}</span>${it?.imgCut?`<label class="check"><input type="checkbox" id="colOrig" ${sl.orig?"":"checked"}> Без фона</label><button class="btn" id="colRecut">Убрать фон заново</button>`:`<button class="btn pri" id="colRecut"${cutting[it?.id]?" disabled":""}>Убрать фон (ИИ)</button>`}<button class="btn" id="colFront">На передний план</button></div>`})():`<p class="m" style="color:var(--muted);margin:0">ИИ убирает фон у товаров автоматически. Первый раз загрузка занимает до минуты, дальше быстрее.</p>`}
     </section>`;
   }
   const list=colList.map(c=>`<section class="panel vizcard"><div class="vizhead"><div><h2 style="margin:0">${esc(c.title||"Сочетание")}</h2><div class="m" style="color:var(--muted)">${[c.bgId,...(c.layers||[]).map(l=>l.itemId)].map(id=>byId(id)?.name).filter(Boolean).map(esc).join(" + ")}</div></div>${canEdit?`<div class="actions"><button class="btn" data-coledit="${c.id}">Изменить</button><button class="btn bad" data-coldel="${c.id}">${confirmCol===c.id?"Точно удалить?":"Удалить"}</button></div>`:""}</div>${colStage(c,false)}</section>`).join("");
@@ -635,11 +657,12 @@ function render(){
 document.addEventListener("click",e=>{
   const vimg=e.target.closest(".vizimg.picking");
   if(vimg&&!e.target.closest(".pin")){const r=vimg.querySelector("img").getBoundingClientRect();pendingPin={vid:vimg.dataset.viz,x:+((e.clientX-r.left)/r.width*100).toFixed(2),y:+((e.clientY-r.top)/r.height*100).toFixed(2)};render();return}
-  const cb=e.target.closest("#colNew,#colSave,#colCancel,#colFront,[data-colbg],[data-coledit],[data-coldel]");
+  const cb=e.target.closest("#colNew,#colSave,#colCancel,#colFront,#colRecut,[data-colbg],[data-coledit],[data-coldel]");
   if(cb){
     if(cb.id==="colNew"){colEdit={id:"col-"+newId(),title:"",bgId:"",tile:25,layers:[]};colSel=null}
     else if(cb.id==="colCancel"){colEdit=null;colSel=null}
     else if(cb.id==="colSave"){const c=colEdit;c.title=$("#colTitle").value.trim()||"Сочетание";const isNew=!c.created;if(isNew)c.created=Date.now();colList=[...colList.filter(x=>x.id!==c.id),c];colEdit=null;colSel=null;saveCol(c);toast("Сочетание сохранено")}
+    else if(cb.id==="colRecut"&&colSel!=null){const it=byId(colEdit.layers[colSel].itemId);colEdit.title=$("#colTitle").value;it.imgCut="";colEdit.layers[colSel].orig=false;cutItem(it);return}
     else if(cb.id==="colFront"&&colSel!=null){const l=colEdit.layers.splice(colSel,1)[0];colEdit.layers.push(l);colSel=colEdit.layers.length-1}
     else if(cb.dataset.colbg){e.preventDefault();const id=cb.dataset.colbg;colEdit.layers=colEdit.layers.filter(l=>l.itemId!==id);if(colEdit.bgId&&colEdit.bgId!==id)colEdit.layers.push({itemId:colEdit.bgId,x:30,y:30,w:30,blend:true});colEdit.bgId=id;colSel=null}
     else if(cb.dataset.coledit){colEdit=structuredClone(colList.find(c=>c.id===cb.dataset.coledit));colSel=null;window.scrollTo({top:0})}
@@ -710,7 +733,7 @@ document.addEventListener("paste",e=>{
   const cd=e.clipboardData;if(!cd)return;
   const file=[...cd.items].find(x=>x.type.startsWith("image/"))?.getAsFile();
   const text=(cd.getData("text")||"").trim();
-  const apply=img=>{if(drawerItem){drawerItem.img=img;save(drawerItem);toast("Фото добавлено");render()}else{pendingImg=img;setPrev($("#fPrev"),img)}};
+  const apply=img=>{if(drawerItem){drawerItem.img=img;drawerItem.imgCut="";save(drawerItem);toast("Фото добавлено");render()}else{pendingImg=img;setPrev($("#fPrev"),img)}};
   if(file){e.preventDefault();fileToDataUrl(file).then(apply);return}
   const tag=e.target.tagName;
   if(/^https?:\/\/\S+\.(jpe?g|png|webp|gif|avif)(\?\S*)?$/i.test(text)&&!(tag==="INPUT"&&e.target.id!=="itemImgUrl")){e.preventDefault();apply(text)}
@@ -720,10 +743,10 @@ document.addEventListener("input",e=>{
 let vizPending="";
 document.addEventListener("change",e=>{
   if(e.target.dataset.colpick&&colEdit){const id=e.target.dataset.colpick,c=colEdit;c.title=$("#colTitle").value;
-    if(e.target.checked){if(!c.bgId&&isArea(byId(id)?.unit))c.bgId=id;else c.layers.push({itemId:id,x:35,y:30,w:30,blend:true})}
+    if(e.target.checked){if(!c.bgId&&isArea(byId(id)?.unit))c.bgId=id;else{c.layers.push({itemId:id,x:35,y:30,w:30,blend:true});const it=byId(id);if(it&&!it.imgCut)setTimeout(()=>cutItem(it),0)}}
     else{if(c.bgId===id)c.bgId="";c.layers=c.layers.filter(l=>l.itemId!==id);colSel=null}
     render()}
-  if(e.target.id==="colBlend"&&colEdit&&colSel!=null){colEdit.layers[colSel].blend=e.target.checked;colEdit.title=$("#colTitle").value;render()}
+  if(e.target.id==="colOrig"&&colEdit&&colSel!=null){colEdit.layers[colSel].orig=!e.target.checked;colEdit.title=$("#colTitle").value;render()}
   if(e.target.id==="fRoom"){const n=$("#fRoomNew");n.hidden=e.target.value!=="__new";n.required=!n.hidden;if(!n.hidden)n.focus()}
   if(e.target.id==="itemRoom"){const n=$("#itemRoomNew");if(e.target.value==="__new"){n.hidden=false;n.focus()}else{const it=byId(openId);it.room=e.target.value;save(it);toast("Помещение: "+it.room);render()}}
   if(e.target.id==="itemRoomNew"){const nm=addRoom(e.target.value);if(nm){const it=byId(openId);it.room=nm;save(it);toast("Помещение: "+nm);render()}}
@@ -732,7 +755,7 @@ document.addEventListener("change",e=>{
   if(e.target.id==="fUrl"){const u=e.target.value.trim();if(!u)return;if($("#fSup")&&!$("#fSup").value)$("#fSup").value=shopName(u);$("#fPrev").textContent="ищу фото…";fetchPreview(u).then(r=>{if(r.img){pendingImg=r.img;const el=$("#fPrev");if(el){setPrev(el,r.img)}}else if($("#fPrev"))$("#fPrev").textContent="фото не найдено";if(r.title&&$("#fName")&&!$("#fName").value)$("#fName").value=r.title.slice(0,120);if(r.price&&$("#fPrice")&&!$("#fPrice").value){$("#fPrice").value=r.price;toast("Цена подставлена со страницы товара")}})}
   if(e.target.id==="itemImgUrl"){const v=e.target.value.trim();if(/^https?:\/\//i.test(v)){const it=byId(openId);imageLoads(v).then(ok=>{if(ok){it.img=v;save(it);toast("Фото добавлено");render()}else toast("По этой ссылке картинка не открывается")})}}
   if(e.target.id==="fFile"&&e.target.files[0]){fileToDataUrl(e.target.files[0]).then(d=>{pendingImg=d;const el=$("#fPrev");setPrev(el,d)})}
-  if((e.target.id==="imgFile"||e.target.id==="imgFileHead")&&e.target.files[0]){const it=byId(openId);fileToDataUrl(e.target.files[0]).then(d=>{it.img=d;save(it);toast("Фото загружено");render()})}
+  if((e.target.id==="imgFile"||e.target.id==="imgFileHead")&&e.target.files[0]){const it=byId(openId);fileToDataUrl(e.target.files[0]).then(d=>{it.img=d;it.imgCut="";save(it);toast("Фото загружено");render()})}
   if(e.target.id==="itemSup"){const it=byId(openId);it.sup=e.target.value.trim();save(it);toast("Поставщик сохранён");render()}
   if(e.target.id==="itemUrl"){const it=byId(openId);it.url=e.target.value.trim();if(it.url&&!it.sup)it.sup=shopName(it.url);save(it);if(it.url){toast("Ищу фото и цену на странице товара…");fetchPreview(it.url).then(r=>{const got=[];if(r.img&&!it.img){it.img=r.img;got.push("фото")}if(r.price&&!it.price){it.price=r.price;got.push("цена")}if(got.length){save(it);toast("Добавлено: "+got.join(" и "));render()}else if(!it.img||!it.price)toast("Не всё нашлось на странице. Укажите вручную.")})}render()}
   if(["itemUnit","itemQty","itemPack"].includes(e.target.id)){const it=byId(openId);it.unit=$("#itemUnit").value;const q=+$("#itemQty").value||0;if(isArea(it.unit)){it.area=q;it.perPack=+($("#itemPack")?.value)||0}else{it.qty=q;it.area=0;it.perPack=0}recalc(it);save(it);render()}

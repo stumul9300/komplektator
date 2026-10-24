@@ -60,7 +60,19 @@ export function parse(html: string, base: string) {
 
 if (typeof Deno !== "undefined") Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
-  const url = new URL(req.url).searchParams.get("url") || "";
+  const params = new URL(req.url).searchParams;
+  // Режим ?img=: отдаём саму картинку с CORS, чтобы сайт мог убрать у неё фон
+  const img = params.get("img") || "";
+  if (img) {
+    if (!/^https?:\/\//i.test(img)) return json({ error: "bad img" }, 400);
+    try {
+      const r = await fetch(img, { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36", "Accept": "image/*" } });
+      const type = r.headers.get("content-type") || "";
+      if (!r.ok || !type.startsWith("image/")) return json({ error: "not an image", status: r.status }, 502);
+      return new Response(await r.arrayBuffer(), { headers: { ...CORS, "Content-Type": type, "Cache-Control": "public, max-age=86400" } });
+    } catch (e) { return json({ error: String(e) }, 502); }
+  }
+  const url = params.get("url") || "";
   if (!/^https?:\/\//i.test(url)) return json({ error: "Нужна ссылка, начинающаяся с http" }, 400);
   try {
     const r = await fetch(url, {
