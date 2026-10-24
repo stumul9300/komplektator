@@ -43,6 +43,14 @@ header{background:var(--surface);border-bottom:1px solid var(--line)}
 .brand small{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 .brand h1{font-family:var(--f-display);font-weight:400;font-size:24px;margin:0;line-height:1.2;text-wrap:balance}
 .roles{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tourbtn{white-space:nowrap}
+.tour-spot{position:fixed;z-index:90;border-radius:10px;box-shadow:0 0 0 3px var(--brass),0 0 0 9999px rgba(10,16,13,.55);pointer-events:none;transition:all .2s}
+.tour-card{position:fixed;z-index:91;width:min(340px,calc(100vw - 32px));background:var(--surface);color:var(--fg);border-radius:12px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.3)}
+.tour-card p{margin:0 0 12px;line-height:1.45}
+.tour-card .tnav{display:flex;gap:8px;align-items:center}
+.tour-card .tnav span{color:var(--muted);font-size:13px;margin-right:auto}
+.tour-card::before{content:"";position:absolute;width:14px;height:14px;background:var(--surface);transform:rotate(45deg);left:var(--ax,24px)}
+.tour-card.below::before{top:-7px}.tour-card.above::before{bottom:-7px}.tour-card.center::before{display:none}
 .roles span{font-size:12px;color:var(--muted)}
 .seg{display:flex;background:var(--sunk);border-radius:10px;padding:3px;gap:2px}
 .seg button{border:0;background:transparent;padding:7px 14px;border-radius:8px;font-weight:500;color:var(--muted)}
@@ -231,6 +239,7 @@ table.spec td.num,table.spec th.num{overflow-wrap:normal;white-space:nowrap}
     <div class="roles">
       <span>Смотреть как:</span>
       <div class="seg" id="roleSeg" role="group" aria-label="Роль"></div>
+      <button class="btn tourbtn" id="tourBtn" type="button" title="Как пользоваться">? Как пользоваться</button>
     </div>
   </div>
   <div class="wrap"><nav class="tabs" id="tabs" role="tablist"></nav></div>
@@ -664,6 +673,81 @@ function projectPanel(){
   </form></details>`;
 }
 let secPick="";
+// ---------- Обучалка: короткий тур по шагам для каждой роли ----------
+const TOUR={
+  kompl:[
+    {t:"Здравствуйте! Это сайт для комплектации. Покажу за минуту, куда что нажимать. Подсказки можно открыть снова кнопкой «? Как пользоваться»."},
+    {sel:"#projSel",t:"Здесь выбираете объект. Новый объект создаётся пунктом «＋ Новый объект…»."},
+    {sel:"#roleSeg",t:"«Смотреть как»: переключите роль, чтобы увидеть сайт глазами дизайнера или заказчика. Им отправляете ссылку на сайт, они выбирают свою роль."},
+    {sel:"[data-tab=spec]",tab:"spec",t:"«Спецификация» — все позиции объекта по разделам и помещениям, с ценами и итогами."},
+    {sel:"#addToggle",tab:"spec",t:"«Добавить позицию»: вставьте ссылку на товар — фото, название и цена подтянутся сами. Помещение и раздел выбираются из списка."},
+    {sel:"#importXls",tab:"spec",t:"Смету можно не набирать вручную: загрузите её из Excel или из Google-таблицы. «Скачать Excel» выгрузит обратно в привычном виде."},
+    {sel:".rowsel",tab:"spec",t:"Отметьте позиции галками. Сверху появятся кнопки «Отправить дизайнеру» и «Запрос поставщику» — поставщику уйдёт отдельная ссылка, где он укажет наличие, цену или замену."},
+    {sel:"tbody .tri",tab:"spec",t:"Статусы под каждой позицией: К — комплектатор, Д — дизайнер, З — заказчик, П — поставщик. ✓ — согласовал, … — ждёт, ✕ — отказ. Позиция утверждена, когда стоят все ✓."},
+    {sel:"tbody tr[data-open] .t",tab:"spec",t:"Нажмите на название — откроется карточка: фото, количество и коробки, цены для клиента и бюро, варианты, чек-лист, оплата и обсуждение."},
+    {sel:"[data-tab=viz]",t:"«Визуализации»: загрузите рендер и расставьте на нём метки позиций, или соберите сочетание — например, душ на фоне плитки."},
+    {sel:"[data-tab=inbox]",t:"«Мои задачи» — что ждёт именно вас: собрать варианты, заказать утверждённое, отметить доставку."},
+    {sel:"#tourBtn",t:"Готово! Эта кнопка снова покажет подсказки."}
+  ],
+  designer:[
+    {t:"Здравствуйте! Здесь комплектатор присылает вам позиции на согласование. Покажу, куда нажимать."},
+    {sel:"[data-tab=inbox]",tab:"inbox",t:"«Мои задачи» — позиции, которые ждут вашего решения. Цифра рядом показывает, сколько их."},
+    {sel:"#main [data-move]",tab:"inbox",t:"Согласуйте позицию — она уйдёт заказчику. Или верните комплектатору на замену."},
+    {sel:"#main [data-open]",tab:"inbox",t:"Нажмите на позицию, чтобы открыть карточку: фото, ссылка, варианты и обсуждение. Там же можно написать комментарий."},
+    {sel:"[data-tab=spec]",t:"«Спецификация» — весь список позиций со статусами К, Д, З."},
+    {sel:"#tourBtn",t:"Эта кнопка снова покажет подсказки."}
+  ],
+  client:[
+    {t:"Здравствуйте! Здесь вы смотрите и согласуете то, что подобрали дизайнер и комплектатор."},
+    {sel:"[data-tab=inbox]",tab:"inbox",t:"«Мои задачи» — позиции, которые ждут вашего решения."},
+    {sel:"#main [data-move],#main [data-open].btn",tab:"inbox",t:"Если вариантов несколько — нажмите «Смотреть варианты» и выберите. Если один — «Согласовать» или «Не подходит»."},
+    {sel:"[data-tab=spec]",t:"«Спецификация» — весь список с ценами и статусами."},
+    {sel:"[data-tab=payments]",t:"«Счета и оплаты» — что выставлено и что оплачено."},
+    {sel:"#tourBtn",t:"Эта кнопка снова покажет подсказки."}
+  ],
+  supplier:[
+    {t:"Здравствуйте! Здесь список позиций, по которым нужны наличие и цена."},
+    {sel:"form[data-ans] select",t:"Выберите: есть в наличии, под заказ, нет — предлагаю замену, или нет совсем."},
+    {sel:"form[data-ans] [name=price]",t:"Укажите цену за единицу и срок поставки."},
+    {sel:"form[data-ans] [name=altName]",t:"Если предлагаете замену — название, артикул, ссылку и цену замены."},
+    {sel:"form[data-ans] button",t:"Нажмите «Отправить ответ». Комплектатор сразу увидит его. Ответ можно потом обновить."}
+  ]
+};
+let tourI=-1,tourSteps=[];
+const tourRole=()=>SUP_TOKEN?"supplier":role;
+function tourStart(){tourSteps=TOUR[tourRole()]||[];tourI=-1;tourGo(1)}
+function tourEnd(){tourI=-1;document.querySelectorAll(".tour-spot,.tour-card").forEach(e=>e.remove());try{localStorage.setItem("k-tour-"+tourRole(),"1")}catch(e){}}
+function tourVisible(el){if(!el)return false;const r=el.getBoundingClientRect();return r.width>0&&r.height>0}
+function tourGo(dir){
+  let i=tourI;
+  for(;;){i+=dir;if(i<0||i>=tourSteps.length){tourEnd();return}
+    const st=tourSteps[i];
+    if(st.tab&&!SUP_TOKEN&&tab!==st.tab){tab=st.tab;openId=null;render()}
+    if(!st.sel||tourVisible(document.querySelector(st.sel)))break}
+  tourI=i;tourShow();
+}
+function tourShow(){
+  const st=tourSteps[tourI];if(!st)return;
+  let spot=$(".tour-spot"),card=$(".tour-card");
+  if(!spot){spot=document.createElement("div");spot.className="tour-spot";document.body.appendChild(spot)}
+  if(!card){card=document.createElement("div");card.className="tour-card";card.setAttribute("role","dialog");document.body.appendChild(card)}
+  const last=tourI===tourSteps.length-1||tourSteps.slice(tourI+1).every(x=>x.sel&&!tourVisible(document.querySelector(x.sel))&&!x.tab);
+  card.innerHTML=`<p>${esc(st.t)}</p><div class="tnav"><span>${tourI+1} из ${tourSteps.length}</span>${tourI>0?`<button class="btn" data-tour="-1">Назад</button>`:""}<button class="btn pri" data-tour="${last?"end":"1"}">${last?"Понятно":"Далее"}</button></div><button class="close" data-tour="end" aria-label="Закрыть подсказки" style="position:absolute;top:6px;right:8px">×</button>`;
+  const el=st.sel&&document.querySelector(st.sel);
+  if(!el){spot.style.cssText="left:50%;top:40%;width:0;height:0";card.className="tour-card center";card.style.left=`calc(50% - ${card.offsetWidth/2}px)`;card.style.top="30%";return}
+  el.scrollIntoView({block:"center",behavior:"instant"});
+  const r=el.getBoundingClientRect(),pad=6,W=innerWidth,H=innerHeight;
+  spot.style.cssText=`left:${r.left-pad}px;top:${r.top-pad}px;width:${r.width+pad*2}px;height:${r.height+pad*2}px`;
+  const cw=card.offsetWidth,ch=card.offsetHeight;
+  const below=r.bottom+pad+14+ch<H||r.top<ch+30;
+  let x=Math.min(Math.max(16,r.left+r.width/2-cw/2),W-cw-16);
+  card.className="tour-card "+(below?"below":"above");
+  card.style.left=x+"px";card.style.top=(below?r.bottom+pad+12:r.top-pad-12-ch)+"px";
+  card.style.setProperty("--ax",Math.min(Math.max(14,r.left+r.width/2-x-7),cw-28)+"px");
+}
+addEventListener("resize",()=>{if(tourI>=0)tourShow()});
+addEventListener("scroll",()=>{if(tourI>=0)tourShow()},{passive:true});
+function tourAuto(){if(tourI>=0||!loaded)return;let seen=false;try{seen=!!localStorage.getItem("k-tour-"+tourRole())}catch(e){seen=true}if(!seen)setTimeout(()=>{if(tourI<0)tourStart()},400)}
 // ---------- Объекты ----------
 const STARTERS=[{id:"proj-souz",name:"Союз",sheet:"https://docs.google.com/spreadsheets/d/1m-GDiWp3xrqhlc_CY3O-f0hZlhulMafC3godvNxGJ-8/edit"},{id:"proj-ostrov",name:"Остров",sheet:"https://docs.google.com/spreadsheets/d/104jxGbnEHn03f1sd2cwTK9lxW5GMxn3PdfT8g7qZnr0/edit#gid=0"}];
 let startersTried=false;
@@ -730,13 +814,14 @@ async function loadSupReq(){
   supErr=error?"Нет связи с базой данных":"";supReq=data&&data[0]?{id:data[0].id,...data[0].data}:null;loaded=true;render();
 }
 function renderSupplier(){
+  setTimeout(tourAuto,0);
   document.querySelector(".roles")?.setAttribute("hidden","");$("#tabs").innerHTML="";$("#drawer").hidden=true;
   const r=supReq;$("#pName").textContent=r?"Запрос на наличие и цены":"Запрос поставщику";
   $("#pSub").textContent=r?`Для: ${r.supplier}`:"";
   if(!loaded){$("#main").innerHTML=`<div class="empty">Загружаю запрос…</div>`;return}
   if(!r){$("#main").innerHTML=`<div class="empty">${supErr||"Запрос не найден. Возможно, его удалили, попросите новую ссылку."}</div>`;return}
   const A=r.answers||{};
-  $("#main").innerHTML=`<p class="note">${r.msg?esc(r.msg)+"<br>":""}Укажите по каждой позиции наличие и цену. Если товара нет, предложите замену: название, артикул, ссылку и цену. Ответ сохраняется кнопкой «Отправить ответ», его сразу увидит комплектатор.</p>
+  $("#main").innerHTML=`<p class="note">${r.msg?esc(r.msg)+"<br>":""}Укажите по каждой позиции наличие и цену. Если товара нет, предложите замену: название, артикул, ссылку и цену. Ответ сохраняется кнопкой «Отправить ответ», его сразу увидит комплектатор. <button class="btn link tourbtn" type="button">Как заполнять?</button></p>
   ${(r.items||[]).map(x=>{const a=A[x.id]||{};return `<article class="panel supitem"><div class="ph" style="${imgOk(x.img)?`background-image:url(&quot;${cssUrl(x.img)}&quot;)`:""}"></div><div><h3>${esc(x.name)}</h3><div class="sku">${[x.brand,x.sku,x.ident,x.dims&&x.dims+" мм",x.color].filter(v=>v&&v!=="—").map(esc).join(" · ")}</div><div style="margin-top:4px">Нужно: <b>${fmtN(x.qty)} ${esc(x.unit)}</b>${safeUrl(x.url)?` · <a href="${esc(safeUrl(x.url))}" target="_blank" rel="noopener">товар ↗</a>`:""}</div>
   <form class="add" data-ans="${esc(x.id)}"><label class="field">Наличие<select name="status">${Object.entries(ANS).map(([k,t])=>`<option value="${k}"${a.status===k?" selected":""}>${t}</option>`).join("")}</select></label><label class="field">Цена за ед., ₽<input name="price" type="number" min="0" step="any" value="${esc(a.price||"")}"></label><label class="field">Срок поставки<input name="eta" value="${esc(a.eta||"")}" placeholder="например, 2 недели"></label>
   <label class="field">Замена: название<input name="altName" value="${esc(a.altName||"")}"></label><label class="field">Артикул замены<input name="altSku" value="${esc(a.altSku||"")}"></label><label class="field">Ссылка на замену<input name="altUrl" type="url" value="${esc(a.altUrl||"")}" placeholder="https://"></label><label class="field">Цена замены, ₽<input name="altPrice" type="number" min="0" step="any" value="${esc(a.altPrice||"")}"></label>
@@ -977,10 +1062,13 @@ function render(){
   for(const[k,v]of Object.entries(formVals)){const el=document.getElementById(k);if(el&&$("#main").contains(el)){if(el.type==="checkbox")el.checked=v;else el.value=v}}
   renderDrawer();
   if(focusId&&document.getElementById(focusId))document.getElementById(focusId).focus();
+  tourAuto();
 }
 
 // ---------- события ----------
 document.addEventListener("click",e=>{
+  const tb=e.target.closest("[data-tour],.tourbtn");
+  if(tb){if(tb.classList.contains("tourbtn"))tourStart();else if(tb.dataset.tour==="end")tourEnd();else tourGo(+tb.dataset.tour);return}
   const vimg=e.target.closest(".vizimg.picking");
   if(vimg&&!e.target.closest(".pin")){const r=vimg.querySelector("img").getBoundingClientRect();pendingPin={vid:vimg.dataset.viz,x:+((e.clientX-r.left)/r.width*100).toFixed(2),y:+((e.clientY-r.top)/r.height*100).toFixed(2)};render();return}
   const cb=e.target.closest("#colNew,#colSave,#colCancel,#colFront,#colRecut,[data-colbg],[data-coledit],[data-coldel]");
