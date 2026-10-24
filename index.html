@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Комплектатор</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Prata&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: рабочее приложение. Шапка с переключателем ролей, вкладки, основная колонка + боковая карточка позиции. */
+:root{
+  --bg:#EEF0EC; --surface:#FFFFFF; --sunk:#E4E8E2; --line:#D3D9D1;
+  --fg:#1C2420; --muted:#66706A; --accent:#2F5D50; --accent-fg:#FFFFFF; --brass:#9C7A33;
+  --s-pick:#7A6FB0; --s-des:#C27C2C; --s-cli:#2C7BB0; --s-ok:#2F8A55; --s-ord:#5A6B66; --s-del:#1F4D3F; --s-bad:#B5463C;
+  --f-display:"Prata",Georgia,"Times New Roman",serif;
+  --f-body:"Onest",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#141917; --surface:#1C2320; --sunk:#232B28; --line:#323C38;
+  --fg:#E6EBE7; --muted:#97A39C; --accent:#7FBFA9; --accent-fg:#0F1A16; --brass:#D2AE62;
+  --s-pick:#A99FE0; --s-des:#E3A35C; --s-cli:#6FB3E0; --s-ok:#6CC892; --s-ord:#9AAAA4; --s-del:#8FD1BA; --s-bad:#E57F74;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141917; --surface:#1C2320; --sunk:#232B28; --line:#323C38;
+  --fg:#E6EBE7; --muted:#97A39C; --accent:#7FBFA9; --accent-fg:#0F1A16; --brass:#D2AE62;
+  --s-pick:#A99FE0; --s-des:#E3A35C; --s-cli:#6FB3E0; --s-ok:#6CC892; --s-ord:#9AAAA4; --s-del:#8FD1BA; --s-bad:#E57F74;
+  color-scheme:dark}
+*{box-sizing:border-box}
+html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0}
+img{max-width:100%}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.5}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header{background:var(--surface);border-bottom:1px solid var(--line)}
+.top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 24px;padding-block:16px}
+.brand{display:flex;flex-direction:column;gap:2px;min-width:0}
+.brand small{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.brand h1{font-family:var(--f-display);font-weight:400;font-size:24px;margin:0;line-height:1.2;text-wrap:balance}
+.roles{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.roles span{font-size:12px;color:var(--muted)}
+.seg{display:flex;background:var(--sunk);border-radius:10px;padding:3px;gap:2px}
+.seg button{border:0;background:transparent;padding:7px 14px;border-radius:8px;font-weight:500;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+nav.tabs{display:flex;gap:4px;overflow-x:auto}
+nav.tabs button{border:0;background:none;padding:10px 14px;border-bottom:2px solid transparent;color:var(--muted);font-weight:500;white-space:nowrap;display:flex;gap:6px;align-items:center}
+nav.tabs button[aria-selected="true"]{color:var(--fg);border-color:var(--accent)}
+.count{font-family:var(--f-mono);font-size:11px;background:var(--brass);color:var(--surface);border-radius:999px;padding:1px 7px}
+main{padding-block:24px 48px}
+.note{font-size:13px;color:var(--muted);margin:0 0 20px}
+h2{font-family:var(--f-display);font-weight:400;font-size:22px;margin:0 0 12px}
+h3{font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px;min-width:0}
+.money{font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.big{font-family:var(--f-display);font-size:30px;line-height:1.1}
+.big small{font-family:var(--f-body);font-size:14px;color:var(--muted)}
+.bar{display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--sunk);margin:12px 0 10px}
+.bar i{display:block;height:100%}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--muted)}
+.legend b{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:0}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;padding:2px 9px;border-radius:999px;white-space:nowrap;border:1px solid currentColor}
+.pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.list{display:flex;flex-direction:column}
+.row{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+.row:first-child{border-top:0}
+.row .grow{flex:1;min-width:0}
+.row .t{font-weight:500;overflow-wrap:anywhere}
+.row .m{font-size:13px;color:var(--muted)}
+.sw{width:38px;height:38px;border-radius:8px;flex:none;border:1px solid var(--line)}
+.btn{border:1px solid var(--line);background:var(--surface);padding:7px 13px;border-radius:8px;font-weight:500;font-size:14px}
+.btn:hover{border-color:var(--muted)}
+.btn.pri{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.btn.bad{color:var(--s-bad)}
+.btn.link{border:0;background:none;padding:0;color:var(--accent);text-decoration:underline;text-underline-offset:3px}
+.toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:14px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:4px 12px;font-size:13px}
+.chip[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.tablebox{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;min-width:820px}
+th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);background:var(--sunk)}
+tbody tr{cursor:pointer}
+tbody tr:hover td{background:var(--sunk)}
+td.num,th.num{text-align:right}
+.sku{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+tfoot td{font-weight:600;border-bottom:0}
+.empty{padding:20px;color:var(--muted);text-align:center}
+/* drawer */
+.scrim{position:fixed;inset:0;background:rgba(10,15,12,.4);z-index:20}
+aside.drawer{position:fixed;top:0;right:0;bottom:0;width:min(460px,100%);background:var(--surface);z-index:21;display:flex;flex-direction:column;border-left:1px solid var(--line);
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);padding-right:env(safe-area-inset-right,0px)}
+.dh{display:flex;gap:14px;padding:18px 20px;border-bottom:1px solid var(--line);align-items:flex-start}
+.dh .sw{width:64px;height:64px}
+.dh h2{font-size:20px;margin:0 0 4px}
+.close{margin-left:auto;border:0;background:none;font-size:22px;line-height:1;color:var(--muted);padding:4px}
+.db{padding:18px 20px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:18px}
+dl{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;margin:0;font-size:14px}
+dt{color:var(--muted)}
+dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.flow{display:flex;flex-wrap:wrap;gap:4px;font-size:12px}
+.flow span{padding:3px 8px;border-radius:6px;background:var(--sunk);color:var(--muted)}
+.flow span.on{background:var(--accent);color:var(--accent-fg)}
+.actions{display:flex;flex-wrap:wrap;gap:8px}
+.wait{font-size:13px;color:var(--muted);background:var(--sunk);border-radius:8px;padding:10px 12px}
+.msgs{display:flex;flex-direction:column;gap:10px}
+.msg{background:var(--sunk);border-radius:10px;padding:9px 12px;font-size:14px}
+.msg .who{font-size:12px;font-weight:600;margin-bottom:2px}
+.msg .who time{font-weight:400;color:var(--muted);margin-left:6px}
+.compose{display:flex;gap:8px}
+.compose input,.field input,.field select{flex:1;min-width:0;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:8px 10px}
+form.add{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:16px}
+.field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;z-index:30;max-width:calc(100% - 32px)}
+.check{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:500}
+.check input{width:18px;height:18px;accent-color:var(--accent)}
+.check:has(input:disabled){color:var(--muted)}
+.vars{display:flex;flex-direction:column;gap:8px}
+.var{display:flex;align-items:center;gap:12px;text-align:left;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:8px 10px;width:100%}
+.var .grow{flex:1;min-width:0;display:flex;flex-direction:column}
+.var .t{font-weight:500}.var .m{font-size:13px;color:var(--muted)}
+.var .mark{font-size:12px;font-weight:600;color:var(--accent);white-space:nowrap}
+.var[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.var:disabled{cursor:default}
+.cl{display:flex;flex-direction:column;gap:6px}
+.cl .done{text-decoration:line-through;color:var(--muted)}
+.projset{margin-bottom:16px}
+.projset summary{cursor:pointer;font-weight:600}
+table.vis th,table.vis td{text-align:center}table.vis th:first-child,table.vis td:first-child{text-align:left}
+table.vis tbody tr{cursor:default}table.vis input{width:18px;height:18px;accent-color:var(--accent)}
+.note.warn{color:var(--s-des)}
+.varwrap{display:flex;flex-direction:column;gap:4px}
+.vlink,.db a{color:var(--accent);font-size:13px}
+.empty-state{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin-top:16px}
+.timeline .row .date{font-family:var(--f-mono);font-size:13px;width:92px;flex:none}
+@media (max-width:560px){.brand h1{font-size:20px}.big{font-size:26px}}
+@media (prefers-reduced-motion:no-preference){aside.drawer{animation:in .18s ease-out}@keyframes in{from{transform:translateX(24px);opacity:.6}}}
+</style>
+</head>
+<body>
+
+
+<header>
+  <div class="wrap top">
+    <div class="brand">
+      <small id="pSub">Тестовая версия</small>
+      <h1 id="pName">Комплектатор</h1>
+    </div>
+    <div class="roles">
+      <span>Смотреть как:</span>
+      <div class="seg" id="roleSeg" role="group" aria-label="Роль"></div>
+    </div>
+  </div>
+  <div class="wrap"><nav class="tabs" id="tabs" role="tablist"></nav></div>
+</header>
+<main class="wrap" id="main"></main>
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" hidden aria-label="Карточка позиции"></aside>
+<div class="toast" id="toast" hidden></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+const ROLES={kompl:{name:"Комплектатор"},designer:{name:"Дизайнер"},client:{name:"Заказчик"}};
+const ST={
+  pick:{t:"Подбор",c:"--s-pick",owner:"kompl"},
+  des:{t:"У дизайнера",c:"--s-des",owner:"designer"},
+  cli:{t:"У заказчика",c:"--s-cli",owner:"client"},
+  ok:{t:"Утверждено",c:"--s-ok",owner:"kompl"},
+  ord:{t:"Заказано",c:"--s-ord",owner:"kompl"},
+  del:{t:"Доставлено",c:"--s-del",owner:null}
+};
+const FLOW=["pick","des","cli","ok","ord","del"];
+const ROOMS=["Гостиная","Кухня","Спальня","Ванная","Прихожая","Детская","Кабинет"];
+const SWATCH=["#A8B5A2","#C4B49A","#8E9AA6","#B79C86","#D9D4CA","#7C6A58","#C8D0D2"];
+
+let role=(()=>{const h=location.hash.slice(1);if(ROLES[h])return h;try{const r=localStorage.getItem("k-role");if(ROLES[r])return r}catch(e){}return"kompl"})();
+let tab="overview",room="Все",openId=null,confirmDel=false;
+const VIS_FEATURES=[["prices","Цены и бюджет"],["checklist","Чек-листы"],["payments","Счета и оплаты"],["delivery","Поставки"]];
+const VIS_DEFAULT={designer:{prices:true,checklist:true,payments:false,delivery:true},client:{prices:true,checklist:false,payments:true,delivery:true}};
+const PAY={none:"Счёта нет",invoice:"Счёт выставлен",partial:"Оплачено частично",paid:"Оплачено"};
+const CHECK_TEMPLATE=["Запросить КП","Получить счёт","Оплатить","Отгрузить","Принять на объекте"];
+let allItems=[],items=[],project={name:"Новый проект",budget:0,address:"",vis:VIS_DEFAULT};
+let loaded=false,offline=false,readOnly=false;
+
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const can=f=>{if(role==="kompl")return true;const v=(project.vis||VIS_DEFAULT)[role]||VIS_DEFAULT[role];return !!v[f]};
+const fmtRub=n=>new Intl.NumberFormat("ru-RU").format(Math.round(n||0))+" ₽";
+const rub=n=>can("prices")?fmtRub(n):"—";
+const payOf=i=>i.pay||{status:"none",invoice:0,paid:0};
+const sum=it=>(it.qty||0)*(it.price||0);
+const pill=s=>`<span class="pill" style="color:var(${ST[s].c})">${ST[s].t}</span>`;
+const now=()=>new Date().toLocaleString("ru-RU",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});
+const fmtDate=d=>{if(!d)return"—";const x=new Date(d+"T00:00");return isNaN(x)?d:x.toLocaleDateString("ru-RU",{day:"numeric",month:"short"})};
+const mine=()=>items.filter(i=>ST[i.st].owner===role);
+const byId=id=>allItems.find(i=>i.id===id);
+const safeUrl=u=>/^https?:\/\//i.test(u||"")?u:"";
+
+function toast(t){const el=$("#toast");el.textContent=t;el.hidden=false;clearTimeout(toast.h);toast.h=setTimeout(()=>el.hidden=true,2600)}
+
+// ---------- хранение ----------
+// ===== НАСТРОЙКА: вставьте сюда данные своего проекта Supabase (Project Settings → API) =====
+const SUPABASE_URL="https://ktrslagtoyybvvndmypi.supabase.co";
+const SUPABASE_KEY="sb_publishable_PanbfKHCL3f1pCI9FrP8ig_rMrEKdNZ";
+// =========================================================================================
+const SEED=[{"created": 1792836000000, "room": "Гостиная", "name": "Диван модульный «Ривьера»", "brand": "Divan.ru", "sku": "RV-310-GR", "url": "", "qty": 1, "unit": "шт", "price": 189000, "sw": "#8A9488", "st": "ord", "needClient": false, "variants": [], "chosen": 0, "checklist": [{"t": "Запросить КП", "done": true}, {"t": "Получить счёт", "done": true}, {"t": "Оплатить", "done": true}, {"t": "Отгрузить", "done": false}, {"t": "Принять на объекте", "done": false}], "pay": {"status": "paid", "invoice": 189000, "paid": 189000}, "eta": "2026-11-14", "sup": "Divan.ru", "hideClient": false, "comments": [{"r": "designer", "t": "Ткань велюр, оттенок «шалфей», как на мудборде.", "d": "21 окт, 10:45"}], "id": "ex01"}, {"created": 1792836000001, "room": "Гостиная", "name": "Стол журнальный, дуб", "brand": "Woodi", "sku": "WD-CT-90", "url": "", "qty": 1, "unit": "шт", "price": 42500, "sw": "#B48A5A", "st": "ok", "needClient": false, "variants": [], "chosen": 0, "checklist": [{"t": "Запросить КП", "done": true}, {"t": "Получить счёт", "done": false}, {"t": "Оплатить", "done": false}, {"t": "Отгрузить", "done": false}, {"t": "Принять на объекте", "done": false}], "pay": {"status": "invoice", "invoice": 42500, "paid": 0}, "eta": "", "sup": "", "hideClient": false, "comments": [], "id": "ex02"}, {"created": 1792836000002, "room": "Гостиная", "name": "Светильник подвесной Arca", "brand": "Lightstar", "sku": "LS-805-31", "url": "", "qty": 2, "unit": "шт", "price": 18900, "sw": "#D8C9A3", "st": "cli", "needClient": true, "variants": [{"name": "Светильник подвесной Arca", "brand": "Lightstar", "sku": "LS-805-31", "price": 18900, "sw": "#D8C9A3", "url": ""}, {"name": "Светильник подвесной Globo, опал", "brand": "Maytoni", "sku": "MOD221-PL-01", "price": 14600, "sw": "#EFEDE6", "url": ""}, {"name": "Светильник Beat, латунь", "brand": "Tom Dixon", "sku": "BLS01-PEU", "price": 52000, "sw": "#B8923F", "url": ""}], "chosen": 0, "checklist": [], "pay": {"status": "none", "invoice": 0, "paid": 0}, "eta": "", "sup": "", "hideClient": false, "comments": [{"r": "kompl", "t": "Все три варианта есть в наличии в Москве, срок 5 дней.", "d": "21 окт, 10:45"}], "id": "ex03"}, {"created": 1792836000003, "room": "Кухня", "name": "Кухонный гарнитур, фасады эмаль", "brand": "Мария", "sku": "KG-ENML-4.2", "url": "", "qty": 1, "unit": "компл.", "price": 640000, "sw": "#E6E2D8", "st": "ok", "needClient": true, "variants": [], "chosen": 0, "checklist": [{"t": "Запросить КП", "done": true}, {"t": "Получить счёт", "done": true}, {"t": "Оплатить", "done": false}, {"t": "Отгрузить", "done": false}, {"t": "Принять на объекте", "done": false}], "pay": {"status": "partial", "invoice": 640000, "paid": 320000}, "eta": "", "sup": "", "hideClient": false, "comments": [], "id": "ex04"}, {"created": 1792836000004, "room": "Кухня", "name": "Стулья барные Frame", "brand": "Stool Group", "sku": "SG-FR-65", "url": "", "qty": 3, "unit": "шт", "price": 14200, "sw": "#3B3B3B", "st": "des", "needClient": true, "variants": [{"name": "Стулья барные Frame", "brand": "Stool Group", "sku": "SG-FR-65", "price": 14200, "sw": "#3B3B3B", "url": ""}, {"name": "Стулья барные Bonnie, букле", "brand": "Stool Group", "sku": "SG-BN-65", "price": 17900, "sw": "#E3DDD0", "url": ""}], "chosen": 0, "checklist": [], "pay": {"status": "none", "invoice": 0, "paid": 0}, "eta": "", "sup": "", "hideClient": false, "comments": [], "id": "ex05"}, {"created": 1792836000005, "room": "Кухня", "name": "Смеситель Grohe Essence", "brand": "Grohe", "sku": "30269000", "url": "", "qty": 1, "unit": "шт", "price": 37800, "sw": "#B9BDBF", "st": "del", "needClient": false, "variants": [], "chosen": 0, "checklist": [{"t": "Запросить КП", "done": true}, {"t": "Получить счёт", "done": true}, {"t": "Оплатить", "done": true}, {"t": "Отгрузить", "done": true}, {"t": "Принять на объекте", "done": true}], "pay": {"status": "paid", "invoice": 37800, "paid": 37800}, "eta": "2026-10-18", "sup": "Grohe", "hideClient": false, "comments": [], "id": "ex06"}, {"created": 1792836000006, "room": "Спальня", "name": "Кровать с мягким изголовьем 180×200", "brand": "Askona", "sku": "AS-MIL-180", "url": "", "qty": 1, "unit": "шт", "price": 96000, "sw": "#A6A08F", "st": "cli", "needClient": true, "variants": [{"name": "Кровать с мягким изголовьем 180×200", "brand": "Askona", "sku": "AS-MIL-180", "price": 96000, "sw": "#A6A08F", "url": ""}, {"name": "Кровать «Лофт» из массива дуба 180×200", "brand": "Woodi", "sku": "WD-BED-180", "price": 132000, "sw": "#B48A5A", "url": ""}], "chosen": 0, "checklist": [], "pay": {"status": "none", "invoice": 0, "paid": 0}, "eta": "", "sup": "", "hideClient": false, "comments": [], "id": "ex07"}, {"created": 1792836000007, "room": "Спальня", "name": "Шторы блэкаут, лён", "brand": "Ателье «Ткани»", "sku": "под заказ", "url": "", "qty": 2, "unit": "шт", "price": 28000, "sw": "#C9C1AE", "st": "pick", "needClient": true, "variants": [], "chosen": 0, "checklist": [], "pay": {"status": "none", "invoice": 0, "paid": 0}, "eta": "", "sup": "", "hideClient": false, "comments": [{"r": "designer", "t": "Нужен вариант на 2–3 тона темнее стены.", "d": "21 окт, 10:45"}], "id": "ex08"}, {"created": 1792836000008, "room": "Ванная", "name": "Керамогранит Kerama Marazzi «Ониче», 60×120", "brand": "Kerama Marazzi", "sku": "SG594402R", "url": "", "qty": 24, "unit": "м²", "price": 4900, "sw": "#EDEAE4", "st": "ord", "needClient": false, "variants": [], "chosen": 0, "checklist": [{"t": "Запросить КП", "done": true}, {"t": "Получить счёт", "done": true}, {"t": "Оплатить", "done": true}, {"t": "Отгрузить", "done": false}, {"t": "Принять на объекте", "done": false}], "pay": {"status": "paid", "invoice": 117600, "paid": 117600}, "eta": "2026-11-02", "sup": "Kerama Marazzi", "hideClient": false, "comments": [], "id": "ex09"}, {"created": 1792836000009, "room": "Ванная", "name": "Тумба с раковиной 80 см", "brand": "Am.Pm", "sku": "M90FHX0802", "url": "", "qty": 1, "unit": "шт", "price": 58300, "sw": "#7C6A58", "st": "des", "needClient": false, "variants": [], "chosen": 0, "checklist": [], "pay": {"status": "none", "invoice": 0, "paid": 0}, "eta": "", "sup": "", "hideClient": false, "comments": [], "id": "ex10"}, {"created": 1792836000010, "room": "Прихожая", "name": "Шкаф-купе встроенный", "brand": "Фабрика «Стенли»", "sku": "под замер", "url": "", "qty": 1, "unit": "шт", "price": 121000, "sw": "#D2CCC2", "st": "pick", "needClient": true, "variants": [], "chosen": 0, "checklist": [{"t": "Запросить КП", "done": false}, {"t": "Получить счёт", "done": false}, {"t": "Оплатить", "done": false}, {"t": "Отгрузить", "done": false}, {"t": "Принять на объекте", "done": false}], "pay": {"status": "none", "invoice": 0, "paid": 0}, "eta": "", "sup": "", "hideClient": false, "comments": [], "id": "ex11"}, {"created": 1792836000011, "room": "Прихожая", "name": "Зеркало в полный рост", "brand": "Evoform", "sku": "BY 0742", "url": "", "qty": 1, "unit": "шт", "price": 16400, "sw": "#C8D0D2", "st": "cli", "needClient": true, "variants": [{"name": "Зеркало в полный рост", "brand": "Evoform", "sku": "BY 0742", "price": 16400, "sw": "#C8D0D2", "url": ""}, {"name": "Зеркало в раме из латуни", "brand": "Bogacho", "sku": "BG-77015", "price": 34800, "sw": "#C9A86A", "url": ""}], "chosen": 0, "checklist": [], "pay": {"status": "none", "invoice": 0, "paid": 0}, "eta": "", "sup": "", "hideClient": false, "comments": [], "id": "ex12"}];
+const SEED_PROJECT={"name": "Пример: квартира на Петровской, 86 м²", "address": "Пример данных, можно удалить", "budget": 2400000, "vis": {"designer": {"prices": true, "checklist": true, "payments": false, "delivery": true}, "client": {"prices": true, "checklist": false, "payments": true, "delivery": true}}};
+let sb=null;
+async function save(it){
+  if(!sb){render();return}
+  const {id,...body}=it;
+  const {error}=await sb.from("items").upsert({id,data:body,created:body.created||Date.now()});
+  if(error)handleWriteError(error);
+}
+async function saveProject(){
+  if(!sb){render();return}
+  const {error}=await sb.from("project").upsert({id:"main",data:project});
+  if(error)handleWriteError(error);
+}
+async function removeItem(id){if(!sb)return;const {error}=await sb.from("items").delete().eq("id",id);if(error)handleWriteError(error)}
+function handleWriteError(e){console.error(e);toast("Не удалось сохранить. Проверьте интернет и попробуйте ещё раз.");render()}
+function newId(){return "p"+Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
+async function loadAll(){
+  const [a,b]=await Promise.all([sb.from("items").select("*").order("created"),sb.from("project").select("*").eq("id","main")]);
+  if(a.error){offline=true;loaded=true;toast("Нет связи с базой данных");render();return}
+  allItems=a.data.map(r=>({id:r.id,...r.data}));
+  if(b.data&&b.data[0])project={...project,...b.data[0].data};
+  loaded=true;render();
+}
+let reloadT;
+async function connect(){
+  if(!SUPABASE_URL||!SUPABASE_KEY||!window.supabase){offline=true;loaded=true;render();return}
+  sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+  await loadAll();
+  sb.channel("komplektator").on("postgres_changes",{event:"*",schema:"public"},()=>{clearTimeout(reloadT);reloadT=setTimeout(loadAll,300)}).subscribe();
+}
+async function seedExamples(){
+  allItems=structuredClone(SEED);project={...project,...SEED_PROJECT};render();
+  if(!sb)return;
+  const r1=await sb.from("items").upsert(SEED.map(({id,...d})=>({id,data:d,created:d.created})));
+  const r2=await sb.from("project").upsert({id:"main",data:project});
+  if(r1.error||r2.error)handleWriteError(r1.error||r2.error);else toast("Примеры добавлены");
+}
+
+// ---------- действия ----------
+function actionsFor(it){
+  const a=[];if(readOnly)return a;
+  if(role==="kompl"){
+    if(it.st==="pick")a.push(["Отправить дизайнеру","des","pri"]);
+    if(it.st==="ok")a.push(["Оформить заказ","ord","pri"]);
+    if(it.st==="ord")a.push(["Отметить доставку","del","pri"]);
+  }
+  if(role==="designer"&&it.st==="des"){a.push(it.needClient?["Согласовать и отправить заказчику","cli","pri"]:["Согласовать","ok","pri"]);a.push(["Вернуть на замену","pick","bad"])}
+  if(role==="client"&&it.st==="cli"){a.push([it.variants?.length>1?"Согласовать выбранный вариант":"Согласовать","ok","pri"]);a.push(["Отклонить","pick","bad"])}
+  return a;
+}
+const DONE={des:"Отправлено дизайнеру",cli:"Отправлено заказчику",ok:"Позиция утверждена",ord:"Заказ оформлен",del:"Доставка отмечена",pick:"Возвращено комплектатору"};
+function move(id,to){
+  const it=byId(id);if(!it)return;
+  const auto={des:"Отправлено на согласование.",cli:"Согласовано, передаю заказчику.",ok:role==="client"&&it.variants?.length>1?"Согласовываю вариант: "+it.name+".":"Утверждаю.",ord:"Заказ оформлен у поставщика.",del:"Позиция доставлена на объект.",pick:role==="client"?"Не подходит, прошу подобрать другой вариант.":"Нужна замена."};
+  it.comments=[...(it.comments||[]),{r:role,t:auto[to],d:now()}];
+  if(to==="ord"&&!it.sup)it.sup=it.brand;
+  it.st=to;toast(DONE[to]);save(it);render();
+}
+function choose(it,k){const v=it.variants[k];it.chosen=k;Object.assign(it,{name:v.name,brand:v.brand,sku:v.sku,price:v.price,sw:v.sw,url:v.url||""});save(it);render()}
+
+// ---------- отрисовка ----------
+function renderHeader(){
+  $("#pName").textContent=project.name||"Новый проект";
+  $("#pSub").textContent=offline?"Тестовая версия · данные не сохраняются в этом окне":(project.address||"Тестовая версия");
+  $("#roleSeg").innerHTML=Object.entries(ROLES).map(([k,v])=>`<button data-role="${k}" aria-pressed="${k===role}">${v.name}</button>`).join("");
+  items=role==="client"?allItems.filter(i=>!i.hideClient):allItems;
+  const n=mine().length;
+  const T=[["overview","Обзор"],["spec","Спецификация"],["inbox","Мои задачи",n]];
+  if(can("payments"))T.push(["payments","Счета и оплаты"]);
+  if(can("delivery"))T.push(["delivery","Поставки"]);
+  if(!T.some(t=>t[0]===tab))tab="overview";
+  $("#tabs").innerHTML=T.map(([k,t,c])=>`<button role="tab" data-tab="${k}" aria-selected="${k===tab}">${t}${c?`<span class="count">${c}</span>`:""}</button>`).join("");
+}
+function rowItem(i){
+  return `<div class="row" data-open="${i.id}" style="cursor:pointer"><div class="sw" style="background:${esc(i.sw)}"></div><div class="grow"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.room)} · <span class="money">${rub(sum(i))}</span></div></div>${pill(i.st)}</div>`;
+}
+function emptyAll(){
+  return `<div class="panel empty-state"><h2>Пока нет ни одной позиции</h2><p class="note">${role==="kompl"&&!readOnly?"Начните со вкладки «Спецификация»: добавьте позицию, отметьте, нужно ли согласие заказчика, и отправьте дизайнеру.":"Как только комплектатор добавит позиции, они появятся здесь."}</p>${role==="kompl"&&!readOnly?`<div class="actions"><button class="btn pri" data-tab="spec">Перейти к спецификации</button><button class="btn" id="seedBtn">Заполнить примерами</button></div>`:""}</div>`;
+}
+function overview(){
+  if(!items.length)return projectPanel()+accessPanel()+emptyAll();
+  const total=items.reduce((s,i)=>s+sum(i),0);
+  const approved=items.filter(i=>["ok","ord","del"].includes(i.st)).reduce((s,i)=>s+sum(i),0);
+  const B=project.budget||0, scale=Math.max(B,total)||1;
+  const by=FLOW.map(s=>[s,items.filter(i=>i.st===s)]);
+  const rooms=[...new Set(items.map(i=>i.room))].map(r=>{const its=items.filter(i=>i.room===r);return[r,its.reduce((s,i)=>s+sum(i),0),its.length]}).sort((a,b)=>b[1]-a[1]);
+  const maxR=Math.max(1,...rooms.map(r=>r[1]));
+  const tasks=mine();
+  return projectPanel()+accessPanel()+`
+  <div class="grid">
+    ${can("prices")?`<section class="panel">
+      <h3>Бюджет комплектации</h3>
+      <div class="big money">${rub(total)} ${B?`<small>из ${rub(B)}</small>`:""}</div>
+      <div class="bar" aria-hidden="true"><i style="width:${approved/scale*100}%;background:var(--accent)"></i><i style="width:${(total-approved)/scale*100}%;background:var(--brass);opacity:.55"></i></div>
+      <div class="legend"><span><b style="background:var(--accent)"></b>Утверждено ${rub(approved)}</span><span><b style="background:var(--brass);opacity:.55"></b>Ещё не утверждено ${rub(total-approved)}</span></div>
+      ${B?`<p class="m" style="margin:10px 0 0;color:${B-total<0?"var(--s-bad)":"var(--muted)"}">${B-total>=0?"Остаток":"Перерасход"}: <span class="money">${rub(Math.abs(B-total))}</span></p>`:`<p class="m" style="margin:10px 0 0;color:var(--muted)">Бюджет не задан</p>`}
+    </section>`:""}
+    <section class="panel">
+      <h3>Позиции по этапам</h3>
+      <div class="bar" aria-hidden="true">${by.map(([s,a])=>`<i style="width:${a.length/items.length*100}%;background:var(${ST[s].c})"></i>`).join("")}</div>
+      <div class="legend">${by.map(([s,a])=>`<span><b style="background:var(${ST[s].c})"></b>${ST[s].t}: ${a.length}</span>`).join("")}</div>
+    </section>
+    <section class="panel">
+      <h3>Ждёт решения: ${ROLES[role].name.toLowerCase()}</h3>
+      <div class="list">${tasks.length?tasks.slice(0,4).map(rowItem).join(""):`<div class="empty">Сейчас ничего не ждёт вашего решения</div>`}</div>
+      ${tasks.length>4?`<button class="btn link" data-tab="inbox">Все задачи (${tasks.length})</button>`:""}
+    </section>
+  </div>
+  <section class="panel" style="margin-top:16px">
+    <h3>По помещениям</h3>
+    <div class="list">${rooms.map(([r,s,n])=>`<div class="row"><div class="grow"><div class="t">${esc(r)}</div><div class="m">${n} поз.</div><div class="bar" style="height:6px;margin:6px 0 0"><i style="width:${s/maxR*100}%;background:var(--accent)"></i></div></div><div class="money">${rub(s)}</div></div>`).join("")}</div>
+  </section>`;
+}
+function accessPanel(){
+  if(role!=="kompl"||readOnly)return"";
+  const v=project.vis||VIS_DEFAULT;
+  return `<details class="panel projset"><summary>Что видят дизайнер и заказчик</summary>
+  <p class="note" style="margin:10px 0">Отметьте галками, какие разделы открыты каждой роли. Отдельную позицию можно скрыть от заказчика в её карточке.</p>
+  <div class="tablebox" style="border:0"><table class="vis" style="min-width:0"><thead><tr><th>Раздел</th><th>Дизайнер</th><th>Заказчик</th></tr></thead><tbody>
+  ${VIS_FEATURES.map(([f,t])=>`<tr><td>${t}</td>${["designer","client"].map(r=>`<td><input type="checkbox" class="visbox" id="vis-${r}-${f}" data-vis="${r}:${f}" ${v[r]?.[f]?"checked":""} aria-label="${t}: ${ROLES[r].name}"></td>`).join("")}</tr>`).join("")}
+  </tbody></table></div></details>`;
+}
+function payments(){
+  const list=items.filter(i=>["ok","ord","del"].includes(i.st)||payOf(i).status!=="none");
+  const inv=list.reduce((s,i)=>s+(+payOf(i).invoice||0),0),paid=list.reduce((s,i)=>s+(+payOf(i).paid||0),0);
+  return `<div class="grid" style="margin-bottom:16px">
+    <section class="panel"><h3>Выставлено счетов</h3><div class="big money">${rub(inv)}</div></section>
+    <section class="panel"><h3>Оплачено</h3><div class="big money">${rub(paid)}</div></section>
+    <section class="panel"><h3>Осталось оплатить</h3><div class="big money" style="color:${inv-paid>0?"var(--s-des)":"var(--fg)"}">${rub(inv-paid)}</div></section>
+  </div>
+  <div class="tablebox"><table>
+    <thead><tr><th>Позиция</th><th>Помещение</th><th class="num">Сумма по спецификации</th><th class="num">Счёт</th><th class="num">Оплачено</th><th>Статус</th></tr></thead>
+    <tbody>${list.map(i=>{const p=payOf(i);return `<tr data-open="${i.id}"><td><div class="t">${esc(i.name)}</div><div class="sku">${esc(i.sup||i.brand)}</div></td><td>${esc(i.room)}</td><td class="num money">${rub(sum(i))}</td><td class="num money">${p.invoice?rub(p.invoice):"—"}</td><td class="num money">${p.paid?rub(p.paid):"—"}</td><td><span class="pill" style="color:var(${{none:"--muted",invoice:"--s-des",partial:"--s-cli",paid:"--s-ok"}[p.status]})">${PAY[p.status]}</span></td></tr>`}).join("")||`<tr><td colspan="6" class="empty">Счета появятся, когда позиции будут утверждены</td></tr>`}</tbody>
+  </table></div>`;
+}
+function projectPanel(){
+  if(role!=="kompl"||readOnly)return"";
+  return `<details class="panel projset"${items.length?"":" open"}><summary>Данные проекта: название, адрес, бюджет</summary>
+  <form id="projForm" class="add" style="margin:12px 0 0">
+    <label class="field">Название<input id="pjName" value="${esc(project.name)}" required></label>
+    <label class="field">Адрес<input id="pjAddr" value="${esc(project.address)}" placeholder="Город, улица, дом"></label>
+    <label class="field">Бюджет комплектации, ₽<input id="pjBudget" type="number" min="0" value="${project.budget||""}"></label>
+    <div class="field" style="justify-content:flex-end"><button class="btn pri" type="submit">Сохранить</button></div>
+  </form></details>`;
+}
+function spec(){
+  const list=items.filter(i=>room==="Все"||i.room===room);
+  const tot=list.reduce((s,i)=>s+sum(i),0);
+  const canAdd=role==="kompl"&&!readOnly;
+  const usedRooms=["Все",...ROOMS.filter(r=>items.some(i=>i.room===r)),...[...new Set(items.map(i=>i.room))].filter(r=>!ROOMS.includes(r))];
+  return `
+  <div class="toolbar">
+    <div class="chips">${usedRooms.map(r=>`<button class="chip" data-room="${esc(r)}" aria-pressed="${r===room}">${esc(r)}</button>`).join("")}</div>
+    ${canAdd?`<button class="btn pri" id="addToggle">Добавить позицию</button>`:""}
+  </div>
+  ${canAdd?`<form class="add panel" id="addForm" ${items.length?"hidden":""}>
+    <label class="field">Наименование<input id="fName" required placeholder="Например, кресло Lounge"></label>
+    <label class="field">Помещение<select id="fRoom">${ROOMS.map(r=>`<option${r===room?" selected":""}>${r}</option>`).join("")}</select></label>
+    <label class="field">Бренд<input id="fBrand" placeholder="Производитель"></label>
+    <label class="field">Артикул<input id="fSku" placeholder="Артикул поставщика"></label>
+    <label class="field">Ссылка на товар<input id="fUrl" type="url" placeholder="https://"></label>
+    <label class="field">Кол-во<input id="fQty" type="number" min="0" step="any" value="1"></label>
+    <label class="field">Ед.<select id="fUnit"><option>шт</option><option>м²</option><option>пог. м</option><option>компл.</option></select></label>
+    <label class="field">Цена за ед., ₽<input id="fPrice" type="number" min="0" required placeholder="0"></label>
+    <label class="check" style="align-self:end"><input type="checkbox" id="fNeed" checked> Согласовать с заказчиком</label>
+    <div class="field" style="justify-content:flex-end"><button class="btn pri" type="submit">Сохранить</button></div>
+  </form>`:""}
+  ${!items.length&&!canAdd?emptyAll():`<div class="tablebox"><table>
+    <thead><tr><th></th><th>Позиция</th><th>Помещение</th><th class="num">Кол-во</th><th class="num">Цена</th><th class="num">Сумма</th><th>Статус</th></tr></thead>
+    <tbody>${list.map(i=>`<tr data-open="${i.id}"><td style="width:52px"><div class="sw" style="background:${esc(i.sw)}"></div></td><td><div class="t">${esc(i.name)}</div><div class="sku">${esc(i.brand)} · ${esc(i.sku)}</div></td><td>${esc(i.room)}</td><td class="num money">${i.qty} ${esc(i.unit||"шт")}</td><td class="num money">${rub(i.price)}</td><td class="num money">${rub(sum(i))}</td><td>${pill(i.st)}${i.needClient?` <span class="m" title="Нужно согласие заказчика">· ☑ заказчик</span>`:""}${i.variants?.length>1?` <span class="m">· ${i.variants.length} вар.</span>`:""}${i.comments?.length?` <span class="m">· ${i.comments.length} комм.</span>`:""}</td></tr>`).join("")||`<tr><td colspan="7" class="empty">${items.length?"В этом помещении пока нет позиций":"Добавьте первую позицию кнопкой выше"}</td></tr>`}</tbody>
+    <tfoot><tr><td></td><td colspan="4">Итого${room!=="Все"?" · "+esc(room):""}</td><td class="num money">${rub(tot)}</td><td></td></tr></tfoot>
+  </table></div>`}`;
+}
+function inbox(){
+  const t=mine();
+  const hint={kompl:"Подобрать варианты, отправить дизайнеру, оформить заказ утверждённого и отметить доставку.",designer:"Проверить подбор комплектатора: согласовать или вернуть на замену. Галка «Согласовать с заказчиком» решает, пойдёт ли позиция к заказчику.",client:"Здесь позиции, которые команда отметила галкой «Согласовать с заказчиком». Откройте позицию, сравните варианты, выберите подходящий и согласуйте."}[role];
+  return `<h2>Мои задачи · ${ROLES[role].name}</h2><p class="note">${hint}</p>
+  <div class="panel"><div class="list">${t.length?t.map(i=>`<div class="row"><div class="sw" style="background:${esc(i.sw)}"></div><div class="grow" data-open="${i.id}" style="cursor:pointer"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.room)} · <span class="money">${rub(sum(i))}</span> · ${ST[i.st].t}${i.variants?.length>1?` · ${i.variants.length} варианта`:""}</div></div><div class="actions">${(i.variants?.length>1&&role==="client")?`<button class="btn pri" data-open="${i.id}">Смотреть варианты</button>`:actionsFor(i).map(([l,to,c])=>`<button class="btn ${c}" data-move="${i.id}:${to}">${l}</button>`).join("")}</div></div>`).join(""):`<div class="empty">Всё разобрано. Новые задачи появятся, когда другая сторона передаст вам позицию.</div>`}</div></div>`;
+}
+function delivery(){
+  const ord=items.filter(i=>i.st==="ord").sort((a,b)=>(a.eta||"9").localeCompare(b.eta||"9")),del=items.filter(i=>i.st==="del");
+  const r=i=>`<div class="row" data-open="${i.id}" style="cursor:pointer"><div class="date">${fmtDate(i.eta)}</div><div class="sw" style="background:${esc(i.sw)}"></div><div class="grow"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.sup||i.brand)} · ${esc(i.room)}</div></div>${pill(i.st)}</div>`;
+  return `<div class="grid timeline">
+    <section class="panel"><h3>Ожидается</h3><div class="list">${ord.map(r).join("")||`<div class="empty">Нет позиций в пути</div>`}</div></section>
+    <section class="panel"><h3>Доставлено на объект</h3><div class="list">${del.map(r).join("")||`<div class="empty">Пока ничего не доставлено</div>`}</div></section>
+  </div>`;
+}
+
+function renderDrawer(){
+  const d=$("#drawer"),s=$("#scrim");
+  const i=openId&&byId(openId);
+  if(!i){d.hidden=true;s.hidden=true;return}
+  const keepText=$("#cText")?.value||"";
+  const acts=actionsFor(i);
+  const owner=ST[i.st].owner;
+  const flow=FLOW.filter(f=>f!=="cli"||i.needClient);
+  const idx=flow.indexOf(i.st);
+  const canTick=!readOnly&&((role==="kompl"&&i.st==="pick")||(role==="designer"&&i.st==="des"));
+  const canPick=!readOnly&&role==="client"&&i.st==="cli";
+  const V=i.variants||[];
+  const vars=V.length>1?`<div><h3>Варианты · ${V.length}</h3><div class="vars">${V.map((v,k)=>`<div class="varwrap"><button class="var" data-var="${i.id}:${k}" aria-pressed="${k===i.chosen}" ${canPick?"":"disabled"}><span class="sw" style="background:${esc(v.sw)}"></span><span class="grow"><span class="t">${esc(v.name)}</span><span class="m">${esc(v.brand)} · <span class="money">${rub(v.price)}</span> · сумма ${rub(v.price*i.qty)}</span></span><span class="mark">${k===i.chosen?(canPick?"Выбран":"Текущий"):(canPick?"Выбрать":"")}</span></button>${safeUrl(v.url)?`<a class="vlink" href="${esc(safeUrl(v.url))}" target="_blank" rel="noopener">Открыть товар ↗</a>`:""}</div>`).join("")}</div></div>`:"";
+  const addVar=!readOnly&&role==="kompl"&&i.st==="pick"?`<div><h3>Добавить вариант</h3><form class="add" id="varForm" style="margin:0"><label class="field">Название<input id="vName" required autocomplete="off"></label><label class="field">Бренд<input id="vBrand" autocomplete="off"></label><label class="field">Цена за ед., ₽<input id="vPrice" type="number" min="0" required></label><label class="field">Ссылка<input id="vUrl" type="url" placeholder="https://"></label><div class="field" style="justify-content:flex-end"><button class="btn" type="submit">Добавить вариант</button></div></form></div>`:"";
+  const tick=`<label class="check"><input type="checkbox" id="needClient" ${i.needClient?"checked":""} ${canTick?"":"disabled"}> Согласовать с заказчиком</label>`;
+  const eta=!readOnly&&role==="kompl"&&i.st==="ord"?`<label class="field">Дата поставки<input id="etaInput" type="date" value="${esc(i.eta||"")}"></label>`:"";
+  const del=!readOnly&&role==="kompl"?`<button class="btn bad" id="delBtn">${confirmDel?"Точно удалить? Нажмите ещё раз":"Удалить позицию"}</button>`:"";
+  const link=safeUrl(i.url);
+  const isK=role==="kompl"&&!readOnly;
+  const CL=i.checklist||[];
+  const checklist=can("checklist")?`<div><h3>Чек-лист${CL.length?` · ${CL.filter(c=>c.done).length}/${CL.length}`:""}</h3><div class="cl">${CL.map((c,k)=>`<label class="check"><input type="checkbox" data-cl="${k}" ${c.done?"checked":""} ${isK?"":"disabled"}> <span${c.done?' class="done"':""}>${esc(c.t)}</span></label>`).join("")||`<div class="m" style="color:var(--muted);font-size:14px">Пунктов пока нет.</div>`}</div>${isK?`<form class="compose" id="clForm" style="margin-top:8px"><input id="clText" placeholder="Новый пункт" autocomplete="off"><button class="btn" type="submit">Добавить</button></form>${CL.length?"":`<button class="btn link" id="clTpl" style="margin-top:8px">Добавить типовые пункты: КП, счёт, оплата, отгрузка</button>`}`:""}</div>`:"";
+  const p=payOf(i);
+  const pay=can("payments")?`<div><h3>Счёт и оплата</h3>${isK?`<div class="add" style="margin:0"><label class="field">Статус<select id="payStatus">${Object.entries(PAY).map(([k,t])=>`<option value="${k}"${k===p.status?" selected":""}>${t}</option>`).join("")}</select></label><label class="field">Сумма счёта, ₽<input id="payInvoice" type="number" min="0" value="${p.invoice||""}" placeholder="${i.price*i.qty||""}"></label><label class="field">Оплачено, ₽<input id="payPaid" type="number" min="0" value="${p.paid||""}"></label></div>`:`<dl><dt>Статус</dt><dd>${PAY[p.status]}</dd><dt>Счёт</dt><dd class="money">${p.invoice?rub(p.invoice):"—"}</dd><dt>Оплачено</dt><dd class="money">${p.paid?rub(p.paid):"—"}</dd></dl>`}</div>`:"";
+  const hide=isK?`<label class="check"><input type="checkbox" id="showClient" ${i.hideClient?"":"checked"}> Показывать заказчику</label>`:"";
+  d.hidden=false;s.hidden=false;
+  d.innerHTML=`<div class="dh"><div class="sw" style="background:${esc(i.sw)}"></div><div style="min-width:0"><h2>${esc(i.name)}</h2>${pill(i.st)}</div><button class="close" id="close" aria-label="Закрыть">×</button></div>
+  <div class="db">
+    <dl><dt>Помещение</dt><dd>${esc(i.room)}</dd><dt>Бренд</dt><dd>${esc(i.brand)}</dd><dt>Артикул</dt><dd class="sku">${esc(i.sku)}</dd><dt>Количество</dt><dd class="money">${i.qty} ${esc(i.unit||"шт")}</dd><dt>Цена</dt><dd class="money">${rub(i.price)}</dd><dt>Сумма</dt><dd class="money"><b>${rub(sum(i))}</b></dd>${(i.st==="ord"||i.st==="del")&&can("delivery")?`<dt>Поставка</dt><dd>${fmtDate(i.eta)} · ${esc(i.sup||i.brand)}</dd>`:""}${link?`<dt>Ссылка</dt><dd><a href="${esc(link)}" target="_blank" rel="noopener">Открыть товар ↗</a></dd>`:""}</dl>
+    ${tick}
+    ${hide}
+    ${vars}
+    <div><h3>Путь позиции</h3><div class="flow">${flow.map((f,k)=>`<span class="${k<=idx?"on":""}">${ST[f].t}</span>`).join("")}</div></div>
+    ${acts.length?`<div class="actions">${acts.map(([l,to,c])=>`<button class="btn ${c}" data-move="${i.id}:${to}">${l}</button>`).join("")}</div>`:`<div class="wait">${readOnly?"У вас доступ только на просмотр.":owner?`Сейчас ход за ролью «${ROLES[owner].name}».`:"Позиция закрыта."}</div>`}
+    ${eta}
+    ${addVar}
+    ${checklist}
+    ${pay}
+    <div><h3>Обсуждение</h3><div class="msgs">${(i.comments||[]).map(c=>`<div class="msg"><div class="who">${ROLES[c.r]?.name||"Участник"}<time>${esc(c.d)}</time></div>${esc(c.t)}</div>`).join("")||`<div class="m" style="color:var(--muted);font-size:14px">Комментариев пока нет.</div>`}</div></div>
+    ${readOnly?"":`<form class="compose" id="compose"><input id="cText" placeholder="Комментарий от имени: ${ROLES[role].name.toLowerCase()}" autocomplete="off"><button class="btn pri" type="submit">Отправить</button></form>`}
+    ${del}
+  </div>`;
+  if(keepText&&$("#cText"))$("#cText").value=keepText;
+}
+
+function render(){
+  renderHeader();
+  const focusId=document.activeElement?.id;
+  const addOpen=$("#addForm")&&!$("#addForm").hidden;
+  const formVals={};document.querySelectorAll("#main input,#main select").forEach(el=>{if(el.id)formVals[el.id]=el.type==="checkbox"?el.checked:el.value});
+  $("#main").innerHTML=!loaded?`<div class="empty">Загружаю данные проекта…</div>`:(offline?`<p class="note warn">База данных не подключена: изменения пропадут после перезагрузки страницы.</p>`:"")+({overview,spec,inbox,delivery,payments}[tab])();
+  if(addOpen&&$("#addForm"))$("#addForm").hidden=false;
+  for(const[k,v]of Object.entries(formVals)){const el=document.getElementById(k);if(el&&$("#main").contains(el)){if(el.type==="checkbox")el.checked=v;else el.value=v}}
+  renderDrawer();
+  if(focusId&&document.getElementById(focusId))document.getElementById(focusId).focus();
+}
+
+// ---------- события ----------
+document.addEventListener("click",e=>{
+  const b=e.target.closest("[data-role],[data-tab],[data-room],[data-open],[data-move],[data-var],#close,#scrim,#addToggle,#delBtn,#clTpl,#seedBtn");
+  if(!b)return;
+  if(b.id==="delBtn"){
+    if(!confirmDel){confirmDel=true;renderDrawer();return}
+    const id=openId;openId=null;confirmDel=false;allItems=allItems.filter(i=>i.id!==id);
+    removeItem(id);
+    toast("Позиция удалена");render();return;
+  }
+  confirmDel=false;
+  if(b.id==="seedBtn"){seedExamples();return}
+  if(b.dataset.var){const[id,k]=b.dataset.var.split(":");choose(byId(id),+k)}
+  else if(b.dataset.role){role=b.dataset.role;try{localStorage.setItem("k-role",role)}catch(_){}toast("Вы смотрите как "+ROLES[role].name.toLowerCase());render()}
+  else if(b.dataset.tab){tab=b.dataset.tab;render()}
+  else if(b.dataset.room){room=b.dataset.room;render()}
+  else if(b.dataset.move){const[id,to]=b.dataset.move.split(":");move(id,to)}
+  else if(b.dataset.open){openId=b.dataset.open;renderDrawer()}
+  else if(b.id==="close"||b.id==="scrim"){openId=null;renderDrawer()}
+  else if(b.id==="clTpl"){const it=byId(openId);it.checklist=CHECK_TEMPLATE.map(t=>({t,done:false}));save(it);render()}
+  else if(b.id==="addToggle"){const f=$("#addForm");f.hidden=!f.hidden;if(!f.hidden)$("#fName").focus()}
+});
+document.addEventListener("change",e=>{
+  if(e.target.id==="needClient"){const it=byId(openId);it.needClient=e.target.checked;toast(it.needClient?"Позиция пойдёт на согласование заказчику":"Заказчику согласовывать не нужно");save(it);render()}
+  if(e.target.dataset.vis){const[r,f]=e.target.dataset.vis.split(":");const v=structuredClone(project.vis||VIS_DEFAULT);v[r]={...v[r],[f]:e.target.checked};project.vis=v;saveProject();toast(`${ROLES[r].name}: «${VIS_FEATURES.find(x=>x[0]===f)[1]}» ${e.target.checked?"видно":"скрыто"}`);render()}
+  if(e.target.dataset.cl!==undefined){const it=byId(openId);it.checklist[+e.target.dataset.cl].done=e.target.checked;save(it);render()}
+  if(e.target.id==="showClient"){const it=byId(openId);it.hideClient=!e.target.checked;save(it);toast(it.hideClient?"Позиция скрыта от заказчика":"Заказчик видит позицию");render()}
+  if(["payStatus","payInvoice","payPaid"].includes(e.target.id)){const it=byId(openId);it.pay={status:$("#payStatus").value,invoice:+$("#payInvoice").value||0,paid:+$("#payPaid").value||0};if(it.pay.paid&&it.pay.invoice&&it.pay.paid>=it.pay.invoice){it.pay.status="paid";}save(it);toast("Оплата сохранена");render()}
+  if(e.target.id==="etaInput"){const it=byId(openId);it.eta=e.target.value;save(it);toast("Дата поставки сохранена");render()}
+});
+document.addEventListener("submit",e=>{
+  e.preventDefault();
+  const id=e.target.id;
+  if(id==="compose"){const t=$("#cText").value.trim();if(!t)return;const it=byId(openId);it.comments=[...(it.comments||[]),{r:role,t,d:now()}];$("#cText").value="";save(it);render();$("#cText")?.focus()}
+  if(id==="clForm"){const t=$("#clText").value.trim();if(!t)return;const it=byId(openId);it.checklist=[...(it.checklist||[]),{t,done:false}];save(it);render();$("#clText")?.focus()}
+  if(id==="varForm"){
+    const it=byId(openId),n=$("#vName").value.trim();if(!n)return;
+    const V=it.variants||[];
+    if(!V.length)V.push({name:it.name,brand:it.brand,sku:it.sku,price:it.price,sw:it.sw,url:it.url||""});
+    V.push({name:n,brand:$("#vBrand").value.trim()||"—",sku:"—",price:+$("#vPrice").value||0,sw:SWATCH[V.length%SWATCH.length],url:$("#vUrl").value.trim()});
+    it.variants=V;if(it.chosen==null)it.chosen=0;
+    toast("Вариант добавлен");save(it);render();
+  }
+  if(id==="projForm"){
+    project={...project,name:$("#pjName").value.trim()||"Новый проект",address:$("#pjAddr").value.trim(),budget:+$("#pjBudget").value||0};
+    toast("Данные проекта сохранены");saveProject();render();
+  }
+  if(id==="addForm"){
+    const it={id:newId(),created:Date.now(),room:$("#fRoom").value,name:$("#fName").value.trim(),brand:$("#fBrand").value.trim()||"—",sku:$("#fSku").value.trim()||"—",url:$("#fUrl").value.trim(),qty:Math.max(0,+$("#fQty").value||1),unit:$("#fUnit").value,price:+$("#fPrice").value||0,sw:SWATCH[items.length%SWATCH.length],st:"pick",comments:[],needClient:$("#fNeed").checked,variants:[],chosen:0,checklist:[],pay:{status:"none",invoice:0,paid:0}};
+    allItems.push(it);e.target.reset();e.target.hidden=true;
+    toast("Позиция добавлена в подбор");save(it);render();
+  }
+});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&openId){openId=null;confirmDel=false;renderDrawer()}});
+window.addEventListener("hashchange",()=>{const h=location.hash.slice(1);if(ROLES[h]){role=h;render()}});
+render();
+connect();
+</script>
+
+</body>
+</html>
