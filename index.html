@@ -44,6 +44,9 @@ header{background:var(--surface);border-bottom:1px solid var(--line)}
 .brand h1{font-family:var(--f-display);font-weight:400;font-size:24px;margin:0;line-height:1.2;text-wrap:balance}
 .roles{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .tourbtn{white-space:nowrap}
+.bell{position:relative}.bell .count{position:absolute;top:-6px;right:-6px}
+.notes{position:fixed;z-index:60;top:70px;right:16px;width:min(380px,calc(100vw - 32px));max-height:70vh;overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);padding:12px}
+.notes .row{cursor:pointer}.notes .row.unread .t::before{content:"● ";color:var(--s-des)}
 .savest{font-size:13px;color:var(--muted);min-width:0}.savest[data-st=error]{color:var(--s-bad);font-weight:600}.savest[data-st=saved]{color:var(--s-ok)}
 .hist{list-style:none;margin:0;padding:0}.hist li{padding:7px 0;border-bottom:1px solid var(--line);font-size:14px}.hist li:last-child{border-bottom:0}
 .hist time{color:var(--muted);font-size:12px;margin-right:6px;font-family:var(--f-mono)}.hist .who{font-weight:600}
@@ -51,6 +54,7 @@ header{background:var(--surface);border-bottom:1px solid var(--line)}
 .filters{display:flex;flex-wrap:wrap;gap:10px 12px}.filters .field{flex:1 1 150px;min-width:0}
 .queues{display:flex;flex-wrap:wrap;gap:10px}.queue{flex:1 1 140px;display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--bg);text-align:left;cursor:pointer}.queue b{font-size:24px;font-family:var(--f-mono)}.queue span{font-size:13px;color:var(--muted)}.queue:hover{border-color:var(--accent)}.queue.bad b{color:var(--s-bad)}
 .fins{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.fin{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border:1px solid var(--line);border-radius:10px}.fin span{font-size:12px;color:var(--muted)}.fin b{font-size:18px}
+.cmp{border-collapse:collapse;min-width:0;width:auto}.cmp th{background:none;text-align:left;font-size:12px;vertical-align:top;padding:8px 10px;white-space:nowrap}.cmp td{vertical-align:top;padding:8px 10px;min-width:170px;max-width:240px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.cmp td.on{background:color-mix(in srgb,var(--s-ok) 9%,transparent)}.cph{width:150px;height:110px;border-radius:8px;background:var(--sunk) center/cover no-repeat}
 .histday{margin:18px 0 6px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
 .tour-spot{position:fixed;z-index:90;border-radius:10px;box-shadow:0 0 0 3px var(--brass),0 0 0 9999px rgba(10,16,13,.55);pointer-events:none;transition:all .2s}
 .tour-card{position:fixed;z-index:91;width:min(340px,calc(100vw - 32px));background:var(--surface);color:var(--fg);border-radius:12px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.3)}
@@ -249,6 +253,7 @@ table.spec td.num,table.spec th.num{overflow-wrap:normal;white-space:nowrap}
       <span id="saveState" class="savest" role="status" aria-live="polite"></span>
       <span>Смотреть как:</span>
       <div class="seg" id="roleSeg" role="group" aria-label="Роль"></div>
+      <button class="btn bell" id="bellBtn" type="button" aria-label="Уведомления">🔔<span id="bellN" class="count" hidden></span></button>
       <button class="btn tourbtn" id="tourBtn" type="button" title="Как пользоваться">? Как пользоваться</button>
     </div>
   </div>
@@ -496,6 +501,7 @@ async function loadAll(){
   colList=rows.filter(r=>r.id.startsWith("col-")&&pidOf(r.data)===pid).map(r=>({id:r.id,...r.data})).sort((x,y)=>(x.created||0)-(y.created||0));
   loaded=true;render();
   autoImport();
+  if(hasAudit&&role!=="kompl"&&!SUP_TOKEN)loadFeed();
 }
 let reloadT,lostItems=[],reqList=[];
 async function connect(){
@@ -804,12 +810,51 @@ function askReject(ids){
   document.body.appendChild(m);m.querySelector("input[name=text]").focus();
 }
 let inboxSel=new Set();
+// ---------- Уведомления внутри сайта: только то, что касается текущей роли ----------
+let notesOpen=false;
+const readKey=()=>`k-read-${pid}-${role}`;
+function readSet(){try{return new Set(JSON.parse(localStorage.getItem(readKey())||"[]"))}catch(e){return new Set()}}
+function markRead(keys){const r=readSet();keys.forEach(k=>r.add(k));try{localStorage.setItem(readKey(),JSON.stringify([...r].slice(-3000)))}catch(e){}}
+function notifications(){
+  const N=[],me=role;
+  for(const i of items){
+    if(ST[i.st].owner===me&&(me!=="kompl"||i.st!=="pick"||isRej(i))){
+      if(i.reapprove&&me==="designer")N.push({k:`ra:${i.id}:${i.sentAt}`,id:i.id,at:i.sentAt||0,t:"Нужно повторное согласование"});
+      else if(me==="designer"||me==="client")N.push({k:`q:${i.id}:${i.st}:${i.sentAt||""}`,id:i.id,at:i.sentAt||0,t:"Запрос на согласование"});
+    }
+    const la=(i.approvals||[]).at(-1);
+    if(me==="kompl"&&la&&la.r!=="kompl")N.push({k:`a:${i.id}:${la.at}`,id:i.id,at:la.at,t:la.decision==="ok"?`${ROLES[la.r]?.name} согласовал(а)`:`${ROLES[la.r]?.name} отклонил(а)${la.reason?`: ${la.reason}`:""}`});
+    if(me==="designer"&&la&&la.r==="client"&&la.decision==="rej")N.push({k:`a:${i.id}:${la.at}`,id:i.id,at:la.at,t:`Заказчик отклонил${la.reason?`: ${la.reason}`:""}`});
+    (i.comments||[]).forEach((c,n)=>{if(c.r!==me&&ROLES[c.r]&&!/^(Отправлено на согласование|Согласовано, передаю|Согласовываю вариант|Утверждаю|Заказ оформлен|Позиция доставлена|Нужна замена|Не подходит, прошу)/.test(c.t))N.push({k:`c:${i.id}:${n}:${String(c.t).length}`,id:i.id,at:0,ord:n,t:`${ROLES[c.r].name}: «${String(c.t).slice(0,90)}»`})});
+    if(me==="kompl"&&isOver(i))N.push({k:`o:${i.id}:${i.eta}`,id:i.id,at:0,t:`Просрочена поставка (план ${fmtDate(i.eta)})`});
+  }
+  if(feed&&me!=="kompl")feed.filter(e=>e.action==="price"&&e.actor!==me&&evVisible(e)&&byId(e.item_id)&&!byId(e.item_id).deleted).forEach(e=>N.push({k:`p:${e.id}`,id:e.item_id,at:Date.parse(e.created_at),t:`Изменена цена: ${fmtVal(e.field,e.old_json)} → ${fmtVal(e.field,e.new_json)}`}));
+  const r=readSet();N.forEach(n=>n.unread=!r.has(n.k));
+  return N.sort((a,b)=>(b.unread-a.unread)||(b.at-a.at));
+}
+function renderBell(){
+  const btn=$("#bellBtn");if(!btn)return;btn.hidden=!loaded||offline||!!SUP_TOKEN;if(btn.hidden)return;
+  const N=notifications(),u=N.filter(n=>n.unread).length;const c=$("#bellN");c.hidden=!u;c.textContent=u>99?"99+":u;
+  let box=$(".notes");
+  if(!notesOpen){box?.remove();return}
+  if(!box){box=document.createElement("div");box.className="notes";box.setAttribute("role","dialog");box.setAttribute("aria-label","Уведомления");document.body.appendChild(box)}
+  box.innerHTML=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b>Уведомления</b>${u?`<button class="btn link" id="notesAll" style="margin-left:auto">Прочитать все</button>`:""}<button class="close" id="notesClose" aria-label="Закрыть" style="${u?"":"margin-left:auto"}">×</button></div><div class="list">${N.slice(0,60).map(n=>`<div class="row${n.unread?" unread":""}" data-note="${esc(n.k)}" data-noteid="${esc(n.id)}"><div class="grow"><div class="t">${esc(byId(n.id)?.name||"Позиция")}</div><div class="m">${esc(n.t)}</div></div></div>`).join("")||`<div class="empty">Новых событий нет</div>`}</div>`;
+}
+// Сравнение вариантов рядом: окно с колонками, выбор фиксируется в истории (поле «Выбранный вариант»)
+function compareVariants(i){
+  $(".cmpmodal")?.remove();const V=i.variants||[];if(V.length<2)return;
+  const canPick=!readOnly&&role==="client"&&i.st==="cli";
+  const rows=[["Фото",v=>`<div class="cph" style="${swStyle(v)}"></div>`],["Название",v=>`<b>${esc(v.name)}</b>`],["Бренд",v=>esc(v.brand||"—")],["Артикул",v=>esc(v.sku||"—")],["Габариты",v=>esc(v.dims||"—")],["Цена за ед.",v=>`<span class="money">${rub(unitPrice(v))}</span>`],["Сумма",v=>`<span class="money">${rub(unitPrice(v)*(i.qty||0)+(+i.delivery||0))}</span>`],["Срок поставки",v=>esc(v.eta||"—")],["Ссылка",v=>safeUrl(v.url)?`<a href="${esc(safeUrl(v.url))}" target="_blank" rel="noopener">Открыть ↗</a>`:"—"],["Комментарий",v=>esc(v.note||"—")]];
+  const m=document.createElement("div");m.className="tour-menu cmpmodal";m.setAttribute("role","dialog");
+  m.innerHTML=`<div class="tour-card center" style="position:relative;left:auto;top:auto;width:min(980px,calc(100vw - 24px));max-height:calc(100vh - 32px);overflow:auto"><button class="close" data-cmpclose aria-label="Закрыть" style="position:absolute;top:6px;right:8px">×</button><h3 style="margin:0 0 10px">${esc(i.name)} · сравнение вариантов</h3><div style="overflow-x:auto"><table class="cmp"><tbody>${rows.map(([t,f])=>`<tr><th>${t}</th>${V.map((v,k)=>`<td${k===i.chosen?' class="on"':""}>${f(v)}</td>`).join("")}</tr>`).join("")}<tr><th></th>${V.map((v,k)=>`<td${k===i.chosen?' class="on"':""}>${k===i.chosen?`<b style="color:var(--s-ok)">✓ ${canPick?"Выбран":"Текущий"}</b>`:canPick?`<button class="btn pri" data-var="${i.id}:${k}" data-cmpclose>Выбрать</button>`:""}</td>`).join("")}</tr></tbody></table></div></div>`;
+  document.body.appendChild(m);
+}
 function approvalsBlock(i){
   const A=(i.approvals||[]).filter(a=>role!=="client"||a.r==="client"||a.decision==="ok");
   const ok=lastOk(i),diff=i.reapprove?snapDiff(ok,i):[];
   if(!A.length&&!i.reapprove)return "";
   const fmtD=t=>new Date(t).toLocaleString("ru-RU",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});
-  return `<div><h3>Согласования</h3>
+  return `<div id="approvalsBox"><h3>Согласования</h3>
   ${i.reapprove?`<div class="ansbox" style="border-color:var(--s-des)"><b style="color:var(--s-des)">Нужно повторное согласование.</b> После согласования изменилось: ${diff.length?diff.map(([k,o,n])=>`${esc(FIELD[k])} <b>${esc(fmtVal(k,o))}</b> → <b>${esc(fmtVal(k,n))}</b>`).join("; "):"существенные поля"}.</div>`:""}
   <ul class="hist">${A.slice().reverse().map(a=>`<li><time>${fmtD(a.at)}</time><span class="who">${ROLES[a.r]?.name||""}</span> ${a.decision==="ok"?`<span style="color:var(--s-ok)">согласовал(а)</span>`:`<span style="color:var(--s-bad)">отклонил(а)</span>${a.reason?` — ${esc(a.reason)}`:""}${a.comment?`: «${esc(a.comment)}»`:""}`}${a.snap?`<details style="margin-top:4px"><summary class="m" style="cursor:pointer">Что было согласовано</summary><dl style="margin:6px 0 0">${SNAP_F.filter(k=>!blank(a.snap[k])&&(k!=="clientPrice"||role!=="client"||true)).map(k=>`<dt>${esc(FIELD[k]||k)}</dt><dd>${esc(k==="chosen"?"№"+((+a.snap[k]||0)+1):fmtVal(k,a.snap[k]))}${JSON.stringify(a.snap[k]??null)!==JSON.stringify(i[k]??null)&&!(blank(a.snap[k])&&blank(i[k]))?` <span class="m" style="color:var(--s-des)">сейчас: ${esc(k==="chosen"?"№"+((+i[k]||0)+1):fmtVal(k,i[k]))}</span>`:""}</dd>`).join("")}</dl></details>`:""}</li>`).join("")}</ul></div>`;
 }
@@ -858,7 +903,7 @@ async function loadItemAudit(id){
   auditCache.set(id,error?[]:data||[]);if(openId===id)renderDrawer();
 }
 function itemHistory(i){
-  if(!hasAudit)return `<details><summary style="cursor:pointer;font-weight:600">История изменений</summary><p class="m">Журнал включится после обновления базы — файл supabase-update-2.sql.</p></details>`;
+  if(!hasAudit)return `<details id="histBox"><summary style="cursor:pointer;font-weight:600">История изменений</summary><p class="m">Журнал включится после обновления базы — файл supabase-update-2.sql.</p></details>`;
   const ev=auditCache.get(i.id);if(ev===undefined)loadItemAudit(i.id);
   const list=(ev||[]).filter(evVisible);
   return `<details id="histBox"${histOpen?" open":""}><summary style="cursor:pointer;font-weight:600">История изменений${ev?` · ${list.length}`:""}</summary>${ev==null?`<p class="m">Загружаю…</p>`:list.length?`<ul class="hist">${list.map(e=>`<li><time>${evDay(e).replace(/ \d{4}.*$/,"")} ${evTime(e)}</time><span class="who">${evWho(e)}</span> ${evText(e)}</li>`).join("")}</ul>`:`<p class="m">Пока изменений нет.</p>`}</details>`;
@@ -867,7 +912,7 @@ let histOpen=false;
 async function loadFeed(){
   if(!hasAudit)return;feed=feed||[];
   let q=sb.from("audit_events").select("*").eq("project_id",pid).order("created_at",{ascending:false}).limit(1000);
-  const {data,error}=await q;feedErr=error?error.message:"";feed=data||[];if(tab==="history")render();
+  const {data,error}=await q;feedErr=error?error.message:"";feed=data||[];if(tab==="history")render();else renderBell();
 }
 function history(){
   if(!hasAudit)return `<div class="vizhead"><h2>История</h2></div><div class="panel"><p>Чтобы заработал журнал изменений, обновите базу один раз: Supabase → SQL Editor → New query → вставьте текст файла <b>supabase-update-2.sql</b> из архива сайта → Run. После этого обновите страницу.</p><p class="m">Журнал ведёт сама база: записи нельзя изменить или удалить с сайта, время — серверное.</p></div>`;
@@ -981,12 +1026,14 @@ const SCN={
       {t:"ИИ сам уберёт фон у товара (первый раз — до минуты, пока загружается модель). Товар можно двигать и менять размер, плитку — масштабировать. Нажмите «Сохранить»: сочетание увидят дизайнер и заказчик."},
       {sel:"#vzFile,#vizForm",tab:"viz",t:"Ниже — «Визуализации с метками»: загрузите рендер, нажмите на место на картинке и выберите позицию. Метка с номером будет вести на эту позицию."}]},
     {id:"pay",title:"Счета и оплаты",steps:[
-      {sel:"#payStatus",tab:"spec",open:true,t:"В карточке позиции — блок «Счёт и оплата»: статус (нет счёта, выставлен, оплачен частично, оплачен), сумма счёта и сколько оплачено."},
-      {sel:"[data-tab=payments]",tab:"payments",t:"Вкладка «Счета и оплаты» собирает всё вместе: сколько выставлено, оплачено и осталось."}]},
+      {sel:"#payInvoice",tab:"spec",open:true,t:"В карточке позиции — блок «Счёт и оплаты». Впишите сумму счёта (если пусто — берётся сумма по спецификации)."},
+      {sel:"#payForm",tab:"spec",open:true,t:"Добавляйте платежи по одному: дата, сумма, тип (аванс, доплата, возврат) и примечание. Остаток и статус «оплачено частично / оплачено» считаются сами: заказ 100 000, аванс 30 000 — остаток 70 000."},
+      {sel:"[data-tab=payments]",tab:"payments",t:"Вкладка «Счета и оплаты»: сводка (бюджет, утверждено, заказано, оплачено, остаток) и таблица по позициям."}]},
     {id:"delivery",title:"Заказ и поставки",steps:[
       {sel:"[data-tab=inbox]",tab:"inbox",t:"Утверждённые позиции появляются в «Моих задачах» с кнопкой «Оформить заказ»."},
-      {sel:"#etaInput",tab:"spec",open:true,prep:()=>{const i=items.find(x=>x.st==="ord");if(i){openId=i.id;render()}},t:"У заказанной позиции укажите дату поставки. Когда привезли — «Отметить доставку»."},
-      {sel:"[data-tab=delivery]",tab:"delivery",t:"Вкладка «Поставки» — календарь: что и когда приедет, от какого поставщика."}]},
+      {sel:"#shipSel",tab:"spec",open:true,prep:()=>{const i=items.find(x=>x.st==="ord");if(i){openId=i.id;render()}},miss:"Блок «Поставка» появится у заказанной позиции.",t:"У заказанной позиции: статус (заказано, в пути, проблема), плановая и фактическая дата. Когда привезли — «Отметить доставку». Если плановая дата прошла, а поставка не закрыта — позиция помечается как просроченная."},
+      {sel:"#replaceAfter",tab:"spec",miss:"Кнопка есть у заказанной позиции.",t:"«Замена после заказа» создаёт новую позицию-замену. Исходная остаётся со своей историей и оплатами, с отметкой «Проблема»."},
+      {sel:"[data-tab=delivery]",tab:"delivery",t:"Вкладка «Поставки»: просроченные, проблемные, ожидаемые и доставленные."}]},
     {id:"checklist",title:"Чек-лист и обсуждение позиции",steps:[
       {sel:"#clTpl,#clText",tab:"spec",open:true,t:"Чек-лист в карточке: добавьте свои пункты или типовые — КП, счёт, оплата, отгрузка. Отмечайте галками по ходу."},
       {sel:"#cText",tab:"spec",open:true,t:"Обсуждение: комментарии видят все участники, с именем роли и временем."}]},
@@ -996,6 +1043,15 @@ const SCN={
     {id:"project",title:"Новый объект и данные проекта",steps:[
       {sel:"#projSel",t:"Откройте список объектов и выберите «＋ Новый объект…». Введите название, затем (по желанию) ссылку на Google-таблицу со сметой — она загрузится сама."},
       {sel:"#pjName",tab:"overview",prep:()=>{const d=$("#projForm")?.closest("details");if(d)d.open=true},t:"На «Обзоре» в «Данных проекта» — название, адрес, бюджет и площадь. Площадь нужна для «стоимости за м²»."}]},
+    {id:"history",title:"История изменений и лента проекта",steps:[
+      {sel:"#histBox",tab:"spec",open:true,t:"В карточке позиции внизу — «История изменений»: кто, когда и что поменял (цена было → стало, статус, комментарии, решения)."},
+      {sel:"[data-tab=history]",tab:"history",t:"Вкладка «История» — лента всего проекта по дням. Фильтры: даты, участник, тип действия, позиция. Нажмите на строку — откроется позиция."},
+      {sel:"#approvalsBox,aside.drawer h3",tab:"spec",open:i=>(i.approvals||[]).length>0,t:"Каждое согласование сохраняет снимок позиции. Если после согласования изменить цену, модель, количество или вариант — позиция уйдёт на повторное согласование, а прежнее решение останется в истории."}]},
+    {id:"search",title:"Поиск, фильтры и очереди",steps:[
+      {sel:"#fQ",tab:"spec",t:"Поиск по названию, артикулу, поставщику и комментариям — регистр не важен."},
+      {sel:"#fSt",tab:"spec",t:"Фильтры по статусу, разделу, «чей ход», просрочке и «цена не проверялась N дней». Фильтры помнятся, пока открыта вкладка."},
+      {sel:".queues",tab:"overview",t:"На «Обзоре» — очереди: «Ждёт дизайнера», «Ждёт заказчика», «На замену», «Готово к закупке». Нажмите — откроется список."},
+      {sel:"#dupBtn",tab:"spec",open:true,t:"«Дублировать позицию» — копия с фото и параметрами, но без согласований, оплат и статуса закупки. «Цена проверена» — отметка с датой."}]},
     {id:"trash",title:"Удалить и вернуть позицию",steps:[
       {sel:"#delBtn",tab:"spec",open:true,t:"Внизу карточки — «Удалить позицию» (нажать два раза). Позиция не пропадает навсегда, а уходит в корзину."},
       {sel:"#main details:last-of-type",tab:"spec",miss:"Корзина появится, когда вы удалите хотя бы одну позицию.",t:"«Корзина» — под таблицей спецификации. Оттуда позицию можно вернуть кнопкой «Вернуть»."}]}
@@ -1297,7 +1353,7 @@ function spec(){
     <thead><tr><th></th><th>Позиция</th><th>Помещение</th><th class="num">Кол-во</th><th class="num">Цена</th><th class="num">Сумма</th><th>Статус</th></tr></thead>
     <tbody>${groups(list).map(g=>(g.sec!==null?`<tr class="sechead"><td colspan="7">${esc(g.sec||"Без раздела")}</td></tr>`:"")+g.rooms.map(r=>`<tr class="roomhead"><td></td><td colspan="6">${esc(r.room||"Помещение не указано")}</td></tr>`+r.items.map(i=>`<tr data-open="${i.id}"><td style="width:52px">${role==="kompl"&&!readOnly?`<input type="checkbox" class="rowsel" data-sel="${i.id}" ${selIds.has(i.id)?"checked":""} aria-label="Выбрать">`:""}<div class="sw" style="${swStyle(i)}"></div></td><td><div class="t"><span class="no">${i._no||""}</span>${esc(i.name)}</div><div class="sku">${[i.brand,i.sku,i.sup,i.ident,i.dims&&i.dims+" мм",i.color,i.note].filter(x=>x&&x!=="—").map(esc).join(" · ")}</div></td><td>${role==="kompl"&&!readOnly?roomSelect("roomOf-"+i.id,i.room,` data-room-item="${i.id}"`):esc(i.room)}</td><td class="num money">${qtyText(i)}</td><td class="num money">${rub(unitPrice(i))}${role!=="client"&&+i.clientPrice?`<div class="sku">клиенту ${rub(i.clientPrice)}</div>`:""}</td><td class="num money">${rub(sum(i))}${+i.delivery?`<div class="sku">вкл. доставку ${rub(i.delivery)}</div>`:""}${role!=="client"&&+i.bureauPrice?`<div class="sku">бюро ${rub(bureauSum(i))}</div>`:""}</td><td>${tri(i)}${i.variants?.length>1?` <span class="m">${i.variants.length} вар.</span>`:""}${i.comments?.length?` <span class="m">· ${i.comments.length} комм.</span>`:""}</td></tr>`).join("")).join("")+(g.sec!==null?`<tr class="sectot"><td></td><td colspan="4">Итого по разделу${perM2(g.total)}</td><td class="num money">${rub(g.total)}</td><td></td></tr>`:"")).join("")||`<tr><td colspan="7" class="empty">${items.length?(flt.q||flt.st||flt.sec||flt.who||flt.stale||flt.over?"Ничего не найдено — измените фильтры":"В этом помещении пока нет позиций"):"Добавьте первую позицию кнопкой выше"}</td></tr>`}</tbody>
     <tfoot><tr><td></td><td colspan="4">Итого${room!=="Все"?" · "+esc(room):""}${perM2(tot)}</td><td class="num money">${rub(tot)}</td><td></td></tr></tfoot>
-  </table></div>`}${role==="kompl"&&!readOnly&&projItems().some(i=>i.deleted)?`<details class="panel" style="margin-top:16px"><summary style="cursor:pointer;font-weight:600">Корзина · ${projItems().filter(i=>i.deleted).length}</summary><div class="list" style="margin-top:8px">${projItems().filter(i=>i.deleted).map(i=>`<div class="row"><div class="sw" style="${swStyle(i)}"></div><div class="grow"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.room)}</div></div><button class="btn" data-restore="${i.id}">Вернуть</button></div>`).join("")}</div></details>`:""}`;
+  </table></div>`}${role==="kompl"&&!readOnly&&projItems().some(i=>i.deleted)?`<details class="panel" style="margin-top:16px"><summary style="cursor:pointer;font-weight:600">Корзина · ${projItems().filter(i=>i.deleted).length}</summary><div class="list" style="margin-top:8px">${projItems().filter(i=>i.deleted).map(i=>`<div class="row"><div class="sw" style="${swStyle(i)}"></div><div class="grow"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.room)}${+i.deleted>1?` · удалено ${new Date(+i.deleted).toLocaleDateString("ru-RU",{day:"numeric",month:"short"})}`:""}${i.deletedBy?` · ${ROLES[i.deletedBy]?.name||""}`:""}</div></div><button class="btn" data-restore="${i.id}">Вернуть</button></div>`).join("")}</div><p class="m" style="margin:8px 0 0">Удалённые позиции не входят в суммы. История сохраняется и после восстановления.</p><button class="btn bad" id="trashClear" style="margin-top:8px">Очистить корзину навсегда</button></details>`:""}`;
 }
 function inbox(){
   const t=mine();
@@ -1330,8 +1386,8 @@ function renderDrawer(){
   const canTick=!readOnly&&((role==="kompl"&&i.st==="pick")||(role==="designer"&&i.st==="des"));
   const canPick=!readOnly&&role==="client"&&i.st==="cli";
   const V=i.variants||[];
-  const vars=V.length>1?`<div><h3>Варианты · ${V.length}</h3><div class="vars">${V.map((v,k)=>`<div class="varwrap"><button class="var" data-var="${i.id}:${k}" aria-pressed="${k===i.chosen}" ${canPick?"":"disabled"}><span class="sw" style="${swStyle(v)}"></span><span class="grow"><span class="t">${esc(v.name)}</span><span class="m">${esc(v.brand)} · <span class="money">${rub(unitPrice(v))}</span> · сумма ${rub(unitPrice(v)*i.qty)}</span></span><span class="mark">${k===i.chosen?(canPick?"Выбран":"Текущий"):(canPick?"Выбрать":"")}</span></button>${safeUrl(v.url)?`<a class="vlink" href="${esc(safeUrl(v.url))}" target="_blank" rel="noopener">Открыть товар ↗</a>`:""}</div>`).join("")}</div></div>`:"";
-  const addVar=!readOnly&&role==="kompl"&&i.st==="pick"?`<div><h3>Добавить вариант</h3><form class="add" id="varForm" style="margin:0"><label class="field">Название<input id="vName" required autocomplete="off"></label><label class="field">Бренд<input id="vBrand" autocomplete="off"></label><label class="field">Цена за ед., ₽<input id="vPrice" type="number" min="0" placeholder="по ссылке"></label><label class="field">Ссылка<input id="vUrl" type="url" placeholder="https://"></label><div class="field" style="justify-content:flex-end"><button class="btn" type="submit">Добавить вариант</button></div></form></div>`:"";
+  const vars=V.length>1?`<div><h3>Варианты · ${V.length} <button class="btn link" id="varCmp" style="text-transform:none;letter-spacing:0">Сравнить рядом</button></h3><div class="vars">${V.map((v,k)=>`<div class="varwrap"><button class="var" data-var="${i.id}:${k}" aria-pressed="${k===i.chosen}" ${canPick?"":"disabled"}><span class="sw" style="${swStyle(v)}"></span><span class="grow"><span class="t">${esc(v.name)}</span><span class="m">${esc(v.brand)} · <span class="money">${rub(unitPrice(v))}</span> · сумма ${rub(unitPrice(v)*i.qty)}</span></span><span class="mark">${k===i.chosen?(canPick?"Выбран":"Текущий"):(canPick?"Выбрать":"")}</span></button>${safeUrl(v.url)?`<a class="vlink" href="${esc(safeUrl(v.url))}" target="_blank" rel="noopener">Открыть товар ↗</a>`:""}</div>`).join("")}</div></div>`:"";
+  const addVar=!readOnly&&role==="kompl"&&i.st==="pick"?`<div><h3>Добавить вариант</h3><form class="add" id="varForm" style="margin:0"><label class="field">Название<input id="vName" required autocomplete="off"></label><label class="field">Бренд<input id="vBrand" autocomplete="off"></label><label class="field">Артикул<input id="vSku" autocomplete="off"></label><label class="field">Цена за ед., ₽<input id="vPrice" type="number" min="0" placeholder="по ссылке"></label><label class="field">Ссылка<input id="vUrl" type="url" placeholder="https://"></label><label class="field">Габариты, мм<input id="vDims" autocomplete="off"></label><label class="field">Срок поставки<input id="vEta" placeholder="например, 3 недели"></label><label class="field">Комментарий<input id="vNote" autocomplete="off"></label><div class="field" style="justify-content:flex-end"><button class="btn" type="submit">Добавить вариант</button></div></form></div>`:"";
   const tick=`<label class="check"><input type="checkbox" id="needClient" ${needC(i)?"checked":""} ${canTick?"":"disabled"}> Согласовать с заказчиком</label>`;
   const over=isOver(i);
   const eta=["ord","del"].includes(i.st)&&can("delivery")?`<div><h3>Поставка</h3>${role==="kompl"&&!readOnly&&i.st==="ord"?`<div class="add" style="margin:0"><label class="field">Статус<select id="shipSel">${Object.entries(SHIP).map(([k,t])=>`<option value="${k}"${(i.ship||"ordered")===k?" selected":""}>${t}</option>`).join("")}</select></label><label class="field">Плановая дата<input id="etaInput" type="date" value="${esc(i.eta||"")}"></label><label class="field">Фактическая дата<input id="etaFact" type="date" value="${esc(i.etaFact||"")}"></label></div><div class="actions" style="margin-top:8px"><button class="btn" id="replaceAfter">Замена после заказа</button></div>`:`<dl><dt>Статус</dt><dd>${shipOf(i)}</dd><dt>План</dt><dd>${fmtDate(i.eta)}</dd>${i.etaFact?`<dt>Факт</dt><dd>${fmtDate(i.etaFact)}</dd>`:""}</dl>`}${over?`<p class="m" style="color:var(--s-bad);margin:6px 0 0">Просрочено: плановая дата прошла, поставка не закрыта.</p>`:""}${i.replacedBy&&byId(i.replacedBy)?`<p class="m">Заменена позицией <button class="btn link" data-open="${i.replacedBy}">«${esc(byId(i.replacedBy).name)}»</button>.</p>`:""}${i.replaces&&byId(i.replaces)?`<p class="m">Замена для <button class="btn link" data-open="${i.replaces}">«${esc(byId(i.replaces).name)}»</button>.</p>`:""}</div>`:(i.replaces&&byId(i.replaces)?`<p class="m">Замена для <button class="btn link" data-open="${i.replaces}">«${esc(byId(i.replaces).name)}»</button> (исходная позиция и её оплаты сохранены).</p>`:"");
@@ -1391,6 +1447,7 @@ function render(){
   if(addOpen&&$("#addForm"))$("#addForm").hidden=false;
   for(const[k,v]of Object.entries(formVals)){const el=document.getElementById(k);if(el&&$("#main").contains(el)){if(el.type==="checkbox")el.checked=v;else el.value=v}}
   renderDrawer();
+  renderBell();
   if(focusId&&document.getElementById(focusId))document.getElementById(focusId).focus();
   tourAuto();
 }
@@ -1435,6 +1492,12 @@ document.addEventListener("click",e=>{
     const nw=structuredClone(it);Object.assign(nw,{id:newId(),created:Date.now(),name:it.name+" (замена)",st:"pick",sd:"",sc:"",approvals:[],comments:[{r:role,t:`Замена после заказа для «${it.name}».`,d:now()}],pay:{status:"none",invoice:0,paid:0,list:[]},eta:"",etaFact:"",ship:"",replaces:it.id,reapprove:false});delete nw.replacedBy;delete nw._no;
     it.ship="problem";it.replacedBy=nw.id;it.comments=[...(it.comments||[]),{r:role,t:`Заменена после заказа: новая позиция «${nw.name}».`,d:now()}];
     allItems.push(nw);save(it);save(nw);openId=nw.id;toast("Создана позиция-замена, исходная сохранена");render();return}
+  if(e.target.closest("#bellBtn")){notesOpen=!notesOpen;if(notesOpen&&hasAudit&&!feed)loadFeed();renderBell();return}
+  if(e.target.id==="notesClose"){notesOpen=false;renderBell();return}
+  if(e.target.id==="notesAll"){markRead(notifications().map(n=>n.k));renderBell();return}
+  const nt=e.target.closest("[data-note]");if(nt){markRead([nt.dataset.note]);notesOpen=false;if(byId(nt.dataset.noteid)){openId=nt.dataset.noteid}render();return}
+  if(e.target.id==="varCmp"){compareVariants(byId(openId));return}
+  if(e.target.closest("[data-cmpclose]")&&!e.target.closest("[data-var]")){$(".cmpmodal")?.remove();return}
   if(e.target.closest("[data-rejcancel]")){$(".rejmodal")?.remove();return}
   if(e.target.id==="inbOk"){const ids=[...inboxSel].filter(x=>mine().some(i=>i.id===x));ids.forEach(x=>{const i=byId(x);move(x,role==="client"?"ok":(needC(i)?"cli":"ok"),true)});inboxSel.clear();toast(`Согласовано: ${ids.length} поз.`);render();return}
   if(e.target.id==="inbRej"){const ids=[...inboxSel].filter(x=>mine().some(i=>i.id===x));if(ids.length)askReject(ids);return}
@@ -1444,7 +1507,9 @@ document.addEventListener("click",e=>{
   if(e.target.id==="retrySave"){retryUnsaved();toast("Сохраняю…");return}
   if(e.target.id==="restoreLost"){const back=lostItems;lostItems=[];back.forEach(b=>{const it={...b};allItems.push(it);save(it)});toast("Возвращено позиций: "+back.length+" (фото нужно будет добавить заново)");render();return}
   const rb=e.target.closest("[data-restore]");
-  if(rb){const it=byId(rb.dataset.restore);delete it.deleted;save(it);toast("Позиция возвращена");render();return}
+  if(e.target.id==="trashClear"){const tr=projItems().filter(i=>i.deleted);if(!tr.length||!confirm(`Удалить навсегда ${tr.length} поз. из корзины? Вернуть их будет нельзя. Записи об удалении останутся в истории.`))return;
+    tr.forEach(i=>{allItems=allItems.filter(x=>x.id!==i.id);sb?.from("items").delete().eq("id",i.id).then(({error})=>error&&handleWriteError(error))});toast("Корзина очищена");render();return}
+  if(rb){const it=byId(rb.dataset.restore);delete it.deleted;delete it.deletedBy;save(it);toast("Позиция возвращена");render();return}
   const vb=e.target.closest("[data-pinmode],[data-delviz],[data-unpin],#pinSave,#pinCancel");
   if(vb){
     if(vb.dataset.pinmode){pinMode=pinMode===vb.dataset.pinmode?null:vb.dataset.pinmode;pendingPin=null}
@@ -1466,7 +1531,7 @@ document.addEventListener("click",e=>{
   if(b.id==="imgDel"){const it=byId(openId);it.img="";save(it);render();return}
   if(b.id==="imgFetch"){const it=byId(openId);toast("Ищу фото и цену на странице товара…");fetchPreview(it.url).then(r=>{const got=[];if(r.img){it.img=r.img;got.push("фото")}if(r.price){it.price=r.price;got.push("цена")}if(got.length){save(it);toast("Обновлено: "+got.join(" и "));render()}else toast("Не получилось найти фото и цену. Укажите их вручную.")});return}
   if(b.dataset.open&&e.target.closest("select,input"))return;
-  if(b.dataset.var){const[id,k]=b.dataset.var.split(":");choose(byId(id),+k)}
+  if(b.dataset.var){const[id,k]=b.dataset.var.split(":");$(".cmpmodal")?.remove();choose(byId(id),+k)}
   else if(b.dataset.role){role=b.dataset.role;try{localStorage.setItem("k-role",role)}catch(_){}toast("Вы смотрите как "+ROLES[role].name.toLowerCase());render()}
   else if(b.dataset.tab){tab=b.dataset.tab;render()}
   else if(b.dataset.room){room=b.dataset.room;render()}
@@ -1588,7 +1653,8 @@ document.addEventListener("submit",e=>{
     const it=byId(openId),n=$("#vName").value.trim();if(!n)return;
     const V=it.variants||[];
     if(!V.length)V.push({name:it.name,brand:it.brand,sku:it.sku,price:it.price,clientPrice:it.clientPrice||0,sw:it.sw,url:it.url||"",img:it.img||""});
-    const nv={name:n,brand:$("#vBrand").value.trim()||"—",sku:"—",price:+$("#vPrice").value||0,sw:SWATCH[V.length%SWATCH.length],url:$("#vUrl").value.trim(),img:""};V.push(nv);
+    if(!V[0].dims&&it.dims)V[0].dims=it.dims;
+    const nv={name:n,brand:$("#vBrand").value.trim()||"—",sku:$("#vSku").value.trim()||"—",dims:$("#vDims").value.trim(),eta:$("#vEta").value.trim(),note:$("#vNote").value.trim(),price:+$("#vPrice").value||0,sw:SWATCH[V.length%SWATCH.length],url:$("#vUrl").value.trim(),img:""};V.push(nv);
     if(nv.url)fetchPreview(nv.url).then(r=>{let ch=false;if(r.img){nv.img=r.img;ch=true}if(r.price&&!nv.price){nv.price=r.price;ch=true}if(ch){save(it);render()}});
     it.variants=V;if(it.chosen==null)it.chosen=0;
     toast("Вариант добавлен");save(it);render();
