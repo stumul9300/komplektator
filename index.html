@@ -176,10 +176,9 @@ td .roomsel{background:transparent}
 .qtybox{border:1px solid var(--line);border-radius:10px;padding:12px}
 .calc{margin:10px 0 0;font-size:15px}
 .rowsel{width:18px;height:18px;margin:0 0 6px;accent-color:var(--accent);display:block}
-.tri{display:flex;flex-wrap:wrap;gap:4px}
-.tb{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:2px 7px 2px 3px;border-radius:999px;border:1px solid currentColor;white-space:nowrap}
-.tb b{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:currentColor;font-size:10px}
-.tb b{color:var(--surface)}
+.tri{display:flex;flex-wrap:wrap;gap:4px}.tri.sm{flex-wrap:nowrap;flex-shrink:0}.tri.sm .tb{padding-right:6px}
+.tb{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid currentColor;white-space:nowrap}
+.tb b{font-weight:700}
 .tb.g{color:var(--s-ok)}.tb.w{color:var(--s-des)}.tb.r{color:var(--s-bad)}.tb.n{color:var(--muted);opacity:.7}
 .alert{border:1px solid var(--s-bad);color:var(--fg);background:var(--sunk);border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .filebtn{position:relative;overflow:hidden}.filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer}
@@ -339,13 +338,33 @@ let sb=null;
 // ошибки сохранения видны постоянно, а в браузере хранится резервная копия списка.
 const unsaved=new Map();let saveErr="";
 function backupLocal(){try{localStorage.setItem("k-backup",JSON.stringify([...allItems,...lostItems].map(({img,imgCut,variants,...r})=>({...r,variants:(variants||[]).map(({img,...v})=>v)}))))}catch(e){}}
+// Версия каждой позиции, какой её последний раз видели в базе. При сохранении
+// отправляем только поля, изменённые здесь, поверх свежей версии из базы, чтобы
+// не затереть то, что в это время поменял другой участник (например, помещение).
+const base=new Map();
+async function mergeWithServer(id,mine){
+  const prevS=base.get(id);if(!prevS)return mine;
+  const r=await sb.from("items").select("data").eq("id",id).maybeSingle();
+  if(r.error||!r.data)return mine;
+  const prev=JSON.parse(prevS),cur=r.data.data||{},out={...cur};
+  for(const k of new Set([...Object.keys(prev),...Object.keys(mine)])){
+    if(JSON.stringify(prev[k])===JSON.stringify(mine[k]))continue;
+    if(k==="comments"){const seen=new Set((cur.comments||[]).map(c=>c.r+c.d+c.t));out.comments=[...(cur.comments||[]),...(mine.comments||[]).filter(c=>!seen.has(c.r+c.d+c.t))];continue}
+    if(k in mine)out[k]=mine[k];else delete out[k];
+  }
+  return out;
+}
 async function save(it){
   if(!sb){render();return}
   const {id,...body}=it;
   unsaved.set(id,it);
   for(let attempt=0;attempt<3;attempt++){
-    const {error}=await sb.from("items").upsert({id,data:JSON.parse(JSON.stringify(body)),created:body.created||Date.now()});
-    if(!error){if(unsaved.get(id)===it)unsaved.delete(id);if(!unsaved.size&&saveErr){saveErr="";render()}backupLocal();return}
+    const data=await mergeWithServer(id,JSON.parse(JSON.stringify(body)));
+    const {error}=await sb.from("items").upsert({id,data,created:data.created||Date.now()});
+    if(!error){
+      base.set(id,JSON.stringify(data));
+      if(unsaved.get(id)===it){unsaved.delete(id);if(JSON.stringify(data)!==JSON.stringify(body)){Object.assign(it,data);render()}}
+      if(!unsaved.size&&saveErr){saveErr="";render()}backupLocal();return}
     console.error("save",id,error);saveErr=`«${it.name}» не сохранилась: ${error.message||error.code||"ошибка сети"}`;
     await new Promise(r=>setTimeout(r,800*(attempt+1)));
   }
@@ -364,6 +383,7 @@ async function loadAll(){
   const [a,b]=await Promise.all([sb.from("items").select("*").order("created"),sb.from("project").select("*")]);
   if(a.error){offline=true;loaded=true;toast("Нет связи с базой данных");render();return}
   const server=a.data.map(r=>({id:r.id,...r.data}));
+  a.data.forEach(r=>{if(!unsaved.has(r.id))base.set(r.id,JSON.stringify(r.data))});
   // позиции, которые ещё сохраняются или не сохранились, оставляем в списке
   for(const [id,it] of unsaved){const k=server.findIndex(x=>x.id===id);if(k<0)server.push(it);else server[k]=it}
   allItems=server;
@@ -405,12 +425,13 @@ function actionsFor(it){
 }
 const DONE={des:"Отправлено дизайнеру",cli:"Отправлено заказчику",ok:"Позиция утверждена",ord:"Заказ оформлен",del:"Доставка отмечена",pick:"Возвращено комплектатору"};
 // Три статуса под позицией: комплектатор, дизайнер, заказчик. Цвет: g — готово, w — ждёт, r — отклонено, n — пока нет
-function tri(i){
+function tri(i,compact){
   const after=s=>FLOW.indexOf(i.st)>=FLOW.indexOf(s);
   const k=i.st==="pick"?(i.sd==="rej"||i.sc==="rej"?["заменить","r"]:["подбирает","w"]):i.st==="ord"?["заказал","g"]:i.st==="del"?["доставлено","g"]:["отправил","g"];
   const d=i.st==="des"?["ждёт","w"]:i.st==="pick"?(i.sd==="rej"?["вернул","r"]:["—","n"]):["согласовал","g"];
   const c=!needC(i)?["не нужно","n"]:i.st==="cli"?["ждёт","w"]:after("ok")?["согласовал","g"]:i.sc==="rej"&&i.st==="pick"?["отклонил","r"]:["—","n"];
-  return `<div class="tri">${[["Комплектатор",k],["Дизайнер",d],["Заказчик",c]].map(([n,[t,cl]])=>`<span class="tb ${cl}" title="${n}: ${t}"><b>${n[0]}</b>${t}</span>`).join("")}</div>`;
+  const ic={g:"✓",w:"…",r:"✕",n:"—"};
+  return `<div class="tri${compact?" sm":""}">${[["Комплектатор",k],["Дизайнер",d],["Заказчик",c]].map(([n,[t,cl]])=>`<span class="tb ${cl}" title="${n}: ${t}"><b>${n[0]}</b>${compact?ic[cl]:t}</span>`).join("")}</div>`;
 }
 // По умолчанию после дизайнера позиция идёт заказчику на основное согласование
 const needC=i=>i.needClient!==false;
@@ -443,7 +464,7 @@ function renderHeader(){
   $("#tabs").innerHTML=T.map(([k,t,c])=>`<button role="tab" data-tab="${k}" aria-selected="${k===tab}">${t}${c?`<span class="count">${c}</span>`:""}</button>`).join("");
 }
 function rowItem(i){
-  return `<div class="row" data-open="${i.id}" style="cursor:pointer"><div class="sw" style="${swStyle(i)}"></div><div class="grow"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.room)} · <span class="money">${rub(sum(i))}</span></div></div>${pill(i.st)}</div>`;
+  return `<div class="row" data-open="${i.id}" style="cursor:pointer"><div class="sw" style="${swStyle(i)}"></div><div class="grow"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.room)} · <span class="money">${rub(sum(i))}</span></div></div>${tri(i,true)}</div>`;
 }
 function emptyAll(){
   return `<div class="panel empty-state"><h2>Пока нет ни одной позиции</h2><p class="note">${role==="kompl"&&!readOnly?"Начните со вкладки «Спецификация»: добавьте позицию, отметьте, нужно ли согласие заказчика, и отправьте дизайнеру.":"Как только комплектатор добавит позиции, они появятся здесь."}</p>${role==="kompl"&&!readOnly?`<div class="actions"><button class="btn pri" data-tab="spec">Перейти к спецификации</button><button class="btn" id="seedBtn">Заполнить примерами</button></div>`:""}</div>`;
@@ -560,7 +581,7 @@ function renders(){
         ${pp?`<span class="pin pending" style="left:${pp.x}%;top:${pp.y}%">+</span>`:""}
       </div>
       ${pp?`<div class="pinpick"><select id="pinItem">${opts}</select><button class="btn pri" id="pinSave">Поставить</button><button class="btn" id="pinCancel">Отмена</button></div>`:""}
-      ${pins.length?`<div class="list" style="margin-top:10px">${pins.map(p=>`<div class="row"><span class="pin static">${p.k+1}</span><div class="sw" style="${swStyle(p.it)}"></div><div class="grow" data-open="${p.it.id}" style="cursor:pointer"><div class="t">${esc(p.it.name)}</div><div class="m">${esc(p.it.room)} · <span class="money">${rub(sum(p.it))}</span></div></div>${pill(p.it.st)}${canEdit?`<button class="btn" data-unpin="${v.id}:${p.k}" title="Убрать метку" aria-label="Убрать метку">×</button>`:""}</div>`).join("")}</div>`:""}
+      ${pins.length?`<div class="list" style="margin-top:10px">${pins.map(p=>`<div class="row"><span class="pin static">${p.k+1}</span><div class="sw" style="${swStyle(p.it)}"></div><div class="grow" data-open="${p.it.id}" style="cursor:pointer"><div class="t">${esc(p.it.name)}</div><div class="m">${esc(p.it.room)} · <span class="money">${rub(sum(p.it))}</span></div></div>${tri(p.it,true)}${canEdit?`<button class="btn" data-unpin="${v.id}:${p.k}" title="Убрать метку" aria-label="Убрать метку">×</button>`:""}</div>`).join("")}</div>`:""}
     </section>`}).join("");
 }
 function payments(){
@@ -627,11 +648,11 @@ function inbox(){
   const hint={kompl:"Подобрать варианты, отправить дизайнеру, оформить заказ утверждённого и отметить доставку.",designer:"Проверить подбор комплектатора: согласовать или вернуть на замену. Галка «Согласовать с заказчиком» решает, пойдёт ли позиция к заказчику.",client:"Здесь позиции, которые команда отметила галкой «Согласовать с заказчиком». Откройте позицию, сравните варианты, выберите подходящий и согласуйте."}[role];
   const bulk=!readOnly&&t.length>1?(role==="designer"&&t.some(i=>i.st==="des")?`<button class="btn pri" id="bulkDes">Согласовать все (${t.filter(i=>i.st==="des").length}) и отправить заказчику</button>`:role==="kompl"&&t.some(i=>i.st==="pick")?`<button class="btn pri" id="bulkPick">Отправить все из подбора дизайнеру (${t.filter(i=>i.st==="pick").length})</button>`:""):"";
   return `<div class="vizhead"><h2>Мои задачи · ${ROLES[role].name}</h2>${bulk}</div><p class="note">${hint}</p>
-  <div class="panel"><div class="list">${t.length?t.map(i=>`<div class="row"><div class="sw" style="${swStyle(i)}"></div><div class="grow" data-open="${i.id}" style="cursor:pointer"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.room)} · <span class="money">${rub(sum(i))}</span> · ${ST[i.st].t}${i.variants?.length>1?` · ${i.variants.length} варианта`:""}</div></div><div class="actions">${(i.variants?.length>1&&role==="client")?`<button class="btn pri" data-open="${i.id}">Смотреть варианты</button>`:actionsFor(i).map(([l,to,c])=>`<button class="btn ${c}" data-move="${i.id}:${to}">${l}</button>`).join("")}</div></div>`).join(""):`<div class="empty">Всё разобрано. Новые задачи появятся, когда другая сторона передаст вам позицию.</div>`}</div></div>`;
+  <div class="panel"><div class="list">${t.length?t.map(i=>`<div class="row"><div class="sw" style="${swStyle(i)}"></div><div class="grow" data-open="${i.id}" style="cursor:pointer"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.room)} · <span class="money">${rub(sum(i))}</span> ${tri(i,true)}${i.variants?.length>1?` · ${i.variants.length} варианта`:""}</div></div><div class="actions">${(i.variants?.length>1&&role==="client")?`<button class="btn pri" data-open="${i.id}">Смотреть варианты</button>`:actionsFor(i).map(([l,to,c])=>`<button class="btn ${c}" data-move="${i.id}:${to}">${l}</button>`).join("")}</div></div>`).join(""):`<div class="empty">Всё разобрано. Новые задачи появятся, когда другая сторона передаст вам позицию.</div>`}</div></div>`;
 }
 function delivery(){
   const ord=items.filter(i=>i.st==="ord").sort((a,b)=>(a.eta||"9").localeCompare(b.eta||"9")),del=items.filter(i=>i.st==="del");
-  const r=i=>`<div class="row" data-open="${i.id}" style="cursor:pointer"><div class="date">${fmtDate(i.eta)}</div><div class="sw" style="${swStyle(i)}"></div><div class="grow"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.sup||i.brand)} · ${esc(i.room)}</div></div>${pill(i.st)}</div>`;
+  const r=i=>`<div class="row" data-open="${i.id}" style="cursor:pointer"><div class="date">${fmtDate(i.eta)}</div><div class="sw" style="${swStyle(i)}"></div><div class="grow"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.sup||i.brand)} · ${esc(i.room)}</div></div>${tri(i,true)}</div>`;
   return `<div class="grid timeline">
     <section class="panel"><h3>Ожидается</h3><div class="list">${ord.map(r).join("")||`<div class="empty">Нет позиций в пути</div>`}</div></section>
     <section class="panel"><h3>Доставлено на объект</h3><div class="list">${del.map(r).join("")||`<div class="empty">Пока ничего не доставлено</div>`}</div></section>
@@ -667,7 +688,7 @@ function renderDrawer(){
   const pay=can("payments")?`<div><h3>Счёт и оплата</h3>${isK?`<div class="add" style="margin:0"><label class="field">Статус<select id="payStatus">${Object.entries(PAY).map(([k,t])=>`<option value="${k}"${k===p.status?" selected":""}>${t}</option>`).join("")}</select></label><label class="field">Сумма счёта, ₽<input id="payInvoice" type="number" min="0" value="${p.invoice||""}" placeholder="${i.price*i.qty||""}"></label><label class="field">Оплачено, ₽<input id="payPaid" type="number" min="0" value="${p.paid||""}"></label></div>`:`<dl><dt>Статус</dt><dd>${PAY[p.status]}</dd><dt>Счёт</dt><dd class="money">${p.invoice?rub(p.invoice):"—"}</dd><dt>Оплачено</dt><dd class="money">${p.paid?rub(p.paid):"—"}</dd></dl>`}</div>`:"";
   const hide=isK?`<label class="check"><input type="checkbox" id="showClient" ${i.hideClient?"":"checked"}> Показывать заказчику</label>`:"";
   d.hidden=false;s.hidden=false;
-  d.innerHTML=`<div class="dh">${!readOnly&&role==="kompl"?`<label class="sw swup" style="${swStyle(i)}" title="Загрузить фото (или Ctrl+V)"><input type="file" id="imgFileHead" accept="image/*" aria-label="Загрузить фото">${imgOk(i.img)?`<span class="swhint">заменить</span>`:`<span class="swplus">＋<br>фото</span>`}</label>`:`<div class="sw" style="${swStyle(i)}"></div>`}<div style="min-width:0"><h2>${esc(i.name)}</h2>${pill(i.st)}</div><button class="close" id="close" aria-label="Закрыть">×</button></div>
+  d.innerHTML=`<div class="dh">${!readOnly&&role==="kompl"?`<label class="sw swup" style="${swStyle(i)}" title="Загрузить фото (или Ctrl+V)"><input type="file" id="imgFileHead" accept="image/*" aria-label="Загрузить фото">${imgOk(i.img)?`<span class="swhint">заменить</span>`:`<span class="swplus">＋<br>фото</span>`}</label>`:`<div class="sw" style="${swStyle(i)}"></div>`}<div style="min-width:0"><h2>${esc(i.name)}</h2>${tri(i,true)}</div><button class="close" id="close" aria-label="Закрыть">×</button></div>
   <div class="db">
     ${photoTop}
     <dl><dt>Помещение</dt><dd>${!readOnly&&(role==="kompl"||role==="designer")?`${roomSelect("itemRoom",i.room)}<input id="itemRoomNew" placeholder="Название и Enter" hidden style="margin-top:6px">`:esc(i.room)}</dd><dt>Бренд</dt><dd>${esc(i.brand)}</dd><dt>Артикул</dt><dd class="sku">${esc(i.sku)}</dd>${i.sup?`<dt>Поставщик</dt><dd>${esc(i.sup)}</dd>`:""}<dt>Количество</dt><dd class="money">${qtyText(i)}</dd><dt>Цена</dt><dd class="money">${rub(unitPrice(i))}</dd>${role!=="client"&&+i.clientPrice?`<dt>Для клиента</dt><dd class="money">${rub(i.clientPrice)}</dd>`:""}${+i.delivery?`<dt>Доставка</dt><dd class="money">${rub(i.delivery)}</dd>`:""}<dt>Сумма</dt><dd class="money"><b>${rub(sum(i))}</b></dd>${role!=="client"&&+i.bureauPrice?`<dt>Цена для бюро</dt><dd class="money">${rub(i.bureauPrice)} за ед. · итого ${rub(bureauSum(i))}</dd>`:""}${(i.st==="ord"||i.st==="del")&&can("delivery")?`<dt>Поставка</dt><dd>${fmtDate(i.eta)} · ${esc(i.sup||i.brand)}</dd>`:""}${link?`<dt>Ссылка</dt><dd><a href="${esc(link)}" target="_blank" rel="noopener">Открыть товар ↗</a></dd>`:""}</dl>
