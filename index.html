@@ -176,6 +176,11 @@ td .roomsel{background:transparent}
 .qtybox{border:1px solid var(--line);border-radius:10px;padding:12px}
 .calc{margin:10px 0 0;font-size:15px}
 .rowsel{width:18px;height:18px;margin:0 0 6px;accent-color:var(--accent);display:block}
+.tri{display:flex;flex-wrap:wrap;gap:4px}
+.tb{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:2px 7px 2px 3px;border-radius:999px;border:1px solid currentColor;white-space:nowrap}
+.tb b{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:currentColor;font-size:10px}
+.tb b{color:var(--surface)}
+.tb.g{color:var(--s-ok)}.tb.w{color:var(--s-des)}.tb.r{color:var(--s-bad)}.tb.n{color:var(--muted);opacity:.7}
 .filebtn{position:relative;overflow:hidden}.filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer}
 .timeline .row .date{font-family:var(--f-mono);font-size:13px;width:92px;flex:none}
 @media (max-width:560px){.brand h1{font-size:20px}.big{font-size:26px}}
@@ -380,6 +385,14 @@ function actionsFor(it){
   return a;
 }
 const DONE={des:"Отправлено дизайнеру",cli:"Отправлено заказчику",ok:"Позиция утверждена",ord:"Заказ оформлен",del:"Доставка отмечена",pick:"Возвращено комплектатору"};
+// Три статуса под позицией: комплектатор, дизайнер, заказчик. Цвет: g — готово, w — ждёт, r — отклонено, n — пока нет
+function tri(i){
+  const after=s=>FLOW.indexOf(i.st)>=FLOW.indexOf(s);
+  const k=i.st==="pick"?(i.sd==="rej"||i.sc==="rej"?["заменить","r"]:["подбирает","w"]):i.st==="ord"?["заказал","g"]:i.st==="del"?["доставлено","g"]:["отправил","g"];
+  const d=i.st==="des"?["ждёт","w"]:i.st==="pick"?(i.sd==="rej"?["вернул","r"]:["—","n"]):["согласовал","g"];
+  const c=!needC(i)?["не нужно","n"]:i.st==="cli"?["ждёт","w"]:after("ok")?["согласовал","g"]:i.sc==="rej"&&i.st==="pick"?["отклонил","r"]:["—","n"];
+  return `<div class="tri">${[["Комплектатор",k],["Дизайнер",d],["Заказчик",c]].map(([n,[t,cl]])=>`<span class="tb ${cl}" title="${n}: ${t}"><b>${n[0]}</b>${t}</span>`).join("")}</div>`;
+}
 // По умолчанию после дизайнера позиция идёт заказчику на основное согласование
 const needC=i=>i.needClient!==false;
 let selIds=new Set();
@@ -389,6 +402,10 @@ function move(id,to,quiet){
   const auto={des:"Отправлено на согласование.",cli:"Согласовано, передаю заказчику.",ok:role==="client"&&it.variants?.length>1?"Согласовываю вариант: "+it.name+".":"Утверждаю.",ord:"Заказ оформлен у поставщика.",del:"Позиция доставлена на объект.",pick:role==="client"?"Не подходит, прошу подобрать другой вариант.":"Нужна замена."};
   it.comments=[...(it.comments||[]),{r:role,t:auto[to],d:now()}];
   if(to==="ord"&&!it.sup)it.sup=it.brand;
+  if(to==="des"){it.sd="";it.sc=""}
+  if(to==="cli")it.sd="ok";
+  if(to==="ok"){if(role==="client")it.sc="ok";else it.sd="ok"}
+  if(to==="pick"){if(role==="client")it.sc="rej";else if(role==="designer")it.sd="rej"}
   it.st=to;if(!quiet){toast(DONE[to]);}save(it);if(!quiet)render();
 }
 function choose(it,k){const v=it.variants[k];it.chosen=k;Object.assign(it,{name:v.name,brand:v.brand,sku:v.sku,price:v.price,clientPrice:v.clientPrice||0,sw:v.sw,url:v.url||"",img:v.img||""});save(it);render()}
@@ -582,7 +599,7 @@ function spec(){
   </form>`:""}
   ${!items.length&&!canAdd?emptyAll():`<div class="tablebox"><table>
     <thead><tr><th></th><th>Позиция</th><th>Помещение</th><th class="num">Кол-во</th><th class="num">Цена</th><th class="num">Сумма</th><th>Статус</th></tr></thead>
-    <tbody>${list.map(i=>`<tr data-open="${i.id}"><td style="width:52px">${role==="kompl"&&!readOnly&&i.st==="pick"?`<input type="checkbox" class="rowsel" data-sel="${i.id}" ${selIds.has(i.id)?"checked":""} aria-label="Выбрать">`:""}<div class="sw" style="${swStyle(i)}"></div></td><td><div class="t">${esc(i.name)}</div><div class="sku">${esc(i.brand)} · ${esc(i.sku)}${i.sup?` · ${esc(i.sup)}`:""}</div></td><td>${role==="kompl"&&!readOnly?roomSelect("roomOf-"+i.id,i.room,` data-room-item="${i.id}"`):esc(i.room)}</td><td class="num money">${qtyText(i)}</td><td class="num money">${rub(unitPrice(i))}${role!=="client"&&+i.clientPrice?`<div class="sku">клиенту ${rub(i.clientPrice)}</div>`:""}</td><td class="num money">${rub(sum(i))}${+i.delivery?`<div class="sku">вкл. доставку ${rub(i.delivery)}</div>`:""}${role!=="client"&&+i.bureauPrice?`<div class="sku">бюро ${rub(bureauSum(i))}</div>`:""}</td><td>${pill(i.st)}${needC(i)?` <span class="m" title="Нужно согласие заказчика">· ☑ заказчик</span>`:""}${i.variants?.length>1?` <span class="m">· ${i.variants.length} вар.</span>`:""}${i.comments?.length?` <span class="m">· ${i.comments.length} комм.</span>`:""}</td></tr>`).join("")||`<tr><td colspan="7" class="empty">${items.length?"В этом помещении пока нет позиций":"Добавьте первую позицию кнопкой выше"}</td></tr>`}</tbody>
+    <tbody>${list.map(i=>`<tr data-open="${i.id}"><td style="width:52px">${role==="kompl"&&!readOnly&&i.st==="pick"?`<input type="checkbox" class="rowsel" data-sel="${i.id}" ${selIds.has(i.id)?"checked":""} aria-label="Выбрать">`:""}<div class="sw" style="${swStyle(i)}"></div></td><td><div class="t">${esc(i.name)}</div><div class="sku">${esc(i.brand)} · ${esc(i.sku)}${i.sup?` · ${esc(i.sup)}`:""}</div></td><td>${role==="kompl"&&!readOnly?roomSelect("roomOf-"+i.id,i.room,` data-room-item="${i.id}"`):esc(i.room)}</td><td class="num money">${qtyText(i)}</td><td class="num money">${rub(unitPrice(i))}${role!=="client"&&+i.clientPrice?`<div class="sku">клиенту ${rub(i.clientPrice)}</div>`:""}</td><td class="num money">${rub(sum(i))}${+i.delivery?`<div class="sku">вкл. доставку ${rub(i.delivery)}</div>`:""}${role!=="client"&&+i.bureauPrice?`<div class="sku">бюро ${rub(bureauSum(i))}</div>`:""}</td><td>${tri(i)}${i.variants?.length>1?` <span class="m">${i.variants.length} вар.</span>`:""}${i.comments?.length?` <span class="m">· ${i.comments.length} комм.</span>`:""}</td></tr>`).join("")||`<tr><td colspan="7" class="empty">${items.length?"В этом помещении пока нет позиций":"Добавьте первую позицию кнопкой выше"}</td></tr>`}</tbody>
     <tfoot><tr><td></td><td colspan="4">Итого${room!=="Все"?" · "+esc(room):""}</td><td class="num money">${rub(tot)}</td><td></td></tr></tfoot>
   </table></div>`}${role==="kompl"&&!readOnly&&allItems.some(i=>i.deleted)?`<details class="panel" style="margin-top:16px"><summary style="cursor:pointer;font-weight:600">Корзина · ${allItems.filter(i=>i.deleted).length}</summary><div class="list" style="margin-top:8px">${allItems.filter(i=>i.deleted).map(i=>`<div class="row"><div class="sw" style="${swStyle(i)}"></div><div class="grow"><div class="t">${esc(i.name)}</div><div class="m">${esc(i.room)}</div></div><button class="btn" data-restore="${i.id}">Вернуть</button></div>`).join("")}</div></details>`:""}`;
 }
@@ -640,6 +657,7 @@ function renderDrawer(){
     ${tick}
     ${hide}
     ${vars}
+    <div><h3>Статусы</h3>${tri(i)}</div>
     <div><h3>Путь позиции</h3><div class="flow">${flow.map((f,k)=>`<span class="${k<=idx?"on":""}">${ST[f].t}</span>`).join("")}</div></div>
     ${acts.length?`<div class="actions">${acts.map(([l,to,c])=>`<button class="btn ${c}" data-move="${i.id}:${to}">${l}</button>`).join("")}</div>`:`<div class="wait">${readOnly?"У вас доступ только на просмотр.":owner?`Сейчас ход за ролью «${ROLES[owner].name}».`:"Позиция закрыта."}</div>`}
     ${eta}
