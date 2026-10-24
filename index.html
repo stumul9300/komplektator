@@ -173,7 +173,24 @@ table.vis tbody tr{cursor:default}table.vis input{width:18px;height:18px;accent-
 .pin.static{position:static;transform:none;flex:none;box-shadow:none}
 .pinpick{display:flex;gap:8px;flex-wrap:wrap}.pinpick select{flex:1;min-width:0;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:8px 10px}
 .roomsel{border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:6px 8px;max-width:100%}
-td .roomsel{background:transparent}
+td .roomsel{background:transparent;width:100%}
+table.spec{table-layout:fixed;min-width:1100px}
+table.spec td,table.spec th{overflow-wrap:anywhere}
+table.spec td.num,table.spec th.num{overflow-wrap:normal;white-space:nowrap}
+/* телефон: строки таблицы превращаются в карточки */
+@media (max-width:700px){
+  table.spec,table.spec tbody,table.spec tfoot{display:block;min-width:0;width:100%}
+  table.spec thead,table.spec colgroup{display:none}
+  table.spec tbody tr{display:grid;grid-template-columns:48px 1fr 1fr 1fr;gap:6px 10px;padding:12px;border-bottom:1px solid var(--line)}
+  table.spec td{display:block;border:0;padding:0}
+  table.spec tbody tr>td:nth-child(1){grid-row:span 4}
+  table.spec tbody tr>td:nth-child(2),table.spec tbody tr>td:nth-child(3),table.spec tbody tr>td:nth-child(7){grid-column:2/5}
+  table.spec td.num{text-align:left;white-space:normal}
+  table.spec tr.sechead,table.spec tr.roomhead,table.spec tr.sectot,table.spec tfoot tr{display:flex;justify-content:space-between;gap:10px;padding:10px 12px}
+  table.spec tr.sechead td,table.spec tr.roomhead td,table.spec tr.sectot td,table.spec tfoot td{grid-row:auto}
+  table.spec tr.roomhead td:first-child,table.spec tr.sectot td:empty,table.spec tfoot td:empty{display:none}
+  table.spec td.empty{grid-column:1/-1}
+}
 .stage{position:relative;width:100%;aspect-ratio:4/3;border-radius:10px;overflow:hidden;background-color:var(--sunk);touch-action:none;user-select:none}
 .stagehint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:14px;padding:16px;text-align:center}
 .layer{position:absolute;cursor:pointer}
@@ -868,7 +885,8 @@ function spec(){
     <label class="check" style="align-self:end"><input type="checkbox" id="fNeed" checked> Согласовать с заказчиком</label>
     <div class="field" style="justify-content:flex-end"><button class="btn pri" type="submit">Сохранить</button></div>
   </form>`:""}
-  ${!items.length&&!canAdd?emptyAll():`<div class="tablebox"><table>
+  ${!items.length&&!canAdd?emptyAll():`<div class="tablebox"><table class="spec">
+    <colgroup><col style="width:64px"><col><col style="width:170px"><col style="width:120px"><col style="width:120px"><col style="width:130px"><col style="width:230px"></colgroup>
     <thead><tr><th></th><th>Позиция</th><th>Помещение</th><th class="num">Кол-во</th><th class="num">Цена</th><th class="num">Сумма</th><th>Статус</th></tr></thead>
     <tbody>${groups(list).map(g=>(g.sec!==null?`<tr class="sechead"><td colspan="7">${esc(g.sec||"Без раздела")}</td></tr>`:"")+g.rooms.map(r=>`<tr class="roomhead"><td></td><td colspan="6">${esc(r.room||"Помещение не указано")}</td></tr>`+r.items.map(i=>`<tr data-open="${i.id}"><td style="width:52px">${role==="kompl"&&!readOnly?`<input type="checkbox" class="rowsel" data-sel="${i.id}" ${selIds.has(i.id)?"checked":""} aria-label="Выбрать">`:""}<div class="sw" style="${swStyle(i)}"></div></td><td><div class="t"><span class="no">${i._no||""}</span>${esc(i.name)}</div><div class="sku">${[i.brand,i.sku,i.sup,i.ident,i.dims&&i.dims+" мм",i.color,i.note].filter(x=>x&&x!=="—").map(esc).join(" · ")}</div></td><td>${role==="kompl"&&!readOnly?roomSelect("roomOf-"+i.id,i.room,` data-room-item="${i.id}"`):esc(i.room)}</td><td class="num money">${qtyText(i)}</td><td class="num money">${rub(unitPrice(i))}${role!=="client"&&+i.clientPrice?`<div class="sku">клиенту ${rub(i.clientPrice)}</div>`:""}</td><td class="num money">${rub(sum(i))}${+i.delivery?`<div class="sku">вкл. доставку ${rub(i.delivery)}</div>`:""}${role!=="client"&&+i.bureauPrice?`<div class="sku">бюро ${rub(bureauSum(i))}</div>`:""}</td><td>${tri(i)}${supChip(i)}${i.variants?.length>1?` <span class="m">${i.variants.length} вар.</span>`:""}${i.comments?.length?` <span class="m">· ${i.comments.length} комм.</span>`:""}</td></tr>`).join("")).join("")+(g.sec!==null?`<tr class="sectot"><td></td><td colspan="4">Итого по разделу${perM2(g.total)}</td><td class="num money">${rub(g.total)}</td><td></td></tr>`:"")).join("")||`<tr><td colspan="7" class="empty">${items.length?"В этом помещении пока нет позиций":"Добавьте первую позицию кнопкой выше"}</td></tr>`}</tbody>
     <tfoot><tr><td></td><td colspan="4">Итого${room!=="Все"?" · "+esc(room):""}${perM2(tot)}</td><td class="num money">${rub(tot)}</td><td></td></tr></tfoot>
